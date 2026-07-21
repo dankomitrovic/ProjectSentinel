@@ -17,6 +17,8 @@ Classify devices
     ↓
 Add unknown devices to pending review
     ↓
+Update permanent device registry
+    ↓
 Detect network changes
     ↓
 Display results
@@ -30,6 +32,11 @@ from inventory import (
     load_pending_mac_addresses,
     load_trusted_devices,
     save_unknown_devices_to_pending
+)
+from registry import (
+    load_device_registry,
+    save_device_registry,
+    update_device_registry
 )
 from reporting import (
     display_banner,
@@ -62,7 +69,7 @@ def main():
     print()
     print("Scanning network...")
 
-    # Discover the network's current devices.
+    # Discover the devices currently visible on the network.
     current_devices = discover_devices()
 
     # Load the approved and pending device inventories.
@@ -83,7 +90,19 @@ def main():
         pending_mac_addresses
     )
 
-    # Compare the current network state with the previous state.
+    # Load Sentinel's permanent memory of all previously observed devices.
+    device_registry = load_device_registry()
+
+    # Update first-seen, last-seen, times-seen, status and risk information.
+    updated_registry = update_device_registry(
+        classified_devices,
+        device_registry
+    )
+
+    # Save the updated permanent registry.
+    save_device_registry(updated_registry)
+
+    # Compare the current network state with the previous network state.
     new_devices, missing_devices = compare_scans(
         previous_devices,
         current_devices

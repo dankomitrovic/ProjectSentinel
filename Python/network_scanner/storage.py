@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 
 from config import (
+    DEVICE_REGISTRY_FILE,
     LATEST_SCAN_FILE,
     PENDING_DEVICES_FILE,
     SCAN_HISTORY_FILE,
@@ -24,6 +25,7 @@ def ensure_data_files():
 
     os.makedirs("data", exist_ok=True)
 
+    # Each file has its own header structure.
     files_and_headers = {
         LATEST_SCAN_FILE: [
             "IP Address",
@@ -47,11 +49,25 @@ def ensure_data_files():
             "MAC Address",
             "IP Address",
             "Status"
+        ],
+        DEVICE_REGISTRY_FILE: [
+            "MAC Address",
+            "Current IP",
+            "Friendly Name",
+            "First Seen",
+            "Last Seen",
+            "Times Seen",
+            "Status",
+            "Owner",
+            "Device Type",
+            "Risk Score",
+            "Notes"
         ]
     }
 
+    # Only create files that do not already exist.
+    # Existing information will not be overwritten.
     for file_path, headers in files_and_headers.items():
-
         if not os.path.exists(file_path):
             with open(file_path, "w", newline="") as file:
                 writer = csv.writer(file)
