@@ -5,6 +5,14 @@ import os
 
 
 # ----------------------------------------------------------
+# File locations
+# ----------------------------------------------------------
+
+LATEST_SCAN_FILE = "data/latest_devices.csv"
+SCAN_HISTORY_FILE = "data/scan_history.csv"
+
+
+# ----------------------------------------------------------
 # Discover devices that respond to ARP on the network
 # ----------------------------------------------------------
 def discover_devices(network):
@@ -79,15 +87,13 @@ def display_devices(devices):
 # ----------------------------------------------------------
 def load_previous_scan():
 
-    file_name = "latest_devices.csv"
-
     previous_devices = []
 
-    # On the first run there may be no previous file
-    if not os.path.exists(file_name):
+    # On the first run there may be no previous scan file
+    if not os.path.exists(LATEST_SCAN_FILE):
         return previous_devices
 
-    with open(file_name, "r", newline="") as file:
+    with open(LATEST_SCAN_FILE, "r", newline="") as file:
 
         reader = csv.DictReader(file)
 
@@ -108,8 +114,8 @@ def load_previous_scan():
 # ----------------------------------------------------------
 def compare_scans(previous_devices, current_devices):
 
-    # MAC addresses are more useful than IP addresses for
-    # recognising devices because IP addresses can change
+    # MAC addresses are more reliable than IP addresses
+    # when identifying the same device over time
     previous_macs = {
         device["mac_address"]
         for device in previous_devices
@@ -120,10 +126,10 @@ def compare_scans(previous_devices, current_devices):
         for device in current_devices
     }
 
-    # Present now, but absent from the previous scan
+    # Devices present now but not present previously
     new_macs = current_macs - previous_macs
 
-    # Present previously, but absent from the current scan
+    # Devices present previously but not present now
     missing_macs = previous_macs - current_macs
 
     new_devices = [
@@ -176,11 +182,11 @@ def display_changes(new_devices, missing_devices):
 
 # ----------------------------------------------------------
 # Save the current network state
-# Replaces the previous latest_devices.csv file
+# This replaces the previous latest_devices.csv file
 # ----------------------------------------------------------
 def save_latest_scan(devices):
 
-    with open("latest_devices.csv", "w", newline="") as file:
+    with open(LATEST_SCAN_FILE, "w", newline="") as file:
 
         writer = csv.writer(file)
 
@@ -196,24 +202,23 @@ def save_latest_scan(devices):
                 device["mac_address"]
             ])
 
-    print("Latest network state saved to latest_devices.csv")
+    print(f"Latest network state saved to {LATEST_SCAN_FILE}")
 
 
 # ----------------------------------------------------------
-# Append this scan to the historical timeline
+# Append the current scan to the historical timeline
 # ----------------------------------------------------------
 def save_scan_history(devices):
 
-    file_name = "scan_history.csv"
-
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    file_exists = os.path.exists(file_name)
+    file_exists = os.path.exists(SCAN_HISTORY_FILE)
 
-    with open(file_name, "a", newline="") as file:
+    with open(SCAN_HISTORY_FILE, "a", newline="") as file:
 
         writer = csv.writer(file)
 
+        # Write headings only when the file is first created
         if not file_exists:
 
             writer.writerow([
@@ -230,7 +235,7 @@ def save_scan_history(devices):
                 device["mac_address"]
             ])
 
-    print("Scan added to scan_history.csv")
+    print(f"Scan added to {SCAN_HISTORY_FILE}")
 
 
 # ----------------------------------------------------------
@@ -243,30 +248,30 @@ print("=" * 50)
 
 network = "10.0.2.0/24"
 
-# Load the old state before changing the latest scan file
+# Load the previous network state before changing the file
 previous_devices = load_previous_scan()
 
-# Perform the new scan
+# Perform the new network scan
 scan_results = discover_devices(network)
 
 # Convert Scapy results into reusable dictionaries
 current_devices = prepare_device_data(scan_results)
 
-# Display the current state
+# Display the current network state
 display_devices(current_devices)
 
-# Compare the old and current states
+# Compare the current scan with the previous scan
 new_devices, missing_devices = compare_scans(
     previous_devices,
     current_devices
 )
 
-# Display alerts before saving the new state
+# Display any detected changes
 display_changes(
     new_devices,
     missing_devices
 )
 
-# Store the new current state and append history
+# Save the current state and append the scan history
 save_latest_scan(current_devices)
 save_scan_history(current_devices)

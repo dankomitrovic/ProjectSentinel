@@ -1,8 +1,22 @@
-venv/
+# Python
 __pycache__/
-
-latest_devices.csv
-scan_history.csv
-
 *.pyc
 
+# Virtual Environment
+venv/
+
+# Runtime Data
+data/latest_devices.csv
+data/scan_history.csv
+
+# Logs
+logs/
+
+# Exports
+exports/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
