@@ -1,14 +1,16 @@
 """
 Project Sentinel console reporting.
 
-This module controls how scan results and security information appear
-in the terminal.
+This module controls how scan results and security information
+are presented in the terminal.
+
+It does not scan the network, modify inventories or save files.
 """
 
 
 def display_banner():
     """
-    Display the Project Sentinel heading.
+    Display the Project Sentinel application heading.
     """
 
     print()
@@ -55,12 +57,16 @@ def display_devices(classified_devices):
             print("Risk       : Review Required")
             print("Action     : Awaiting manual approval")
 
+        else:
+            print("Risk       : High")
+            print("Action     : Investigate immediately")
+
         device_number += 1
 
 
 def display_changes(new_devices, missing_devices):
     """
-    Display changes detected since the previous scan.
+    Display network changes detected since the previous scan.
     """
 
     print()
@@ -102,3 +108,124 @@ def display_pending_result(added_count):
             f"{added_count} new device(s) added to "
             "data/pending_devices.csv"
         )
+
+
+def determine_overall_risk(
+    pending_count,
+    unknown_count,
+    new_device_count,
+    missing_device_count,
+    highest_device_risk
+):
+    """
+    Determine Sentinel's overall risk level for the monitoring cycle.
+
+    Version 1 rules:
+
+    CRITICAL:
+        At least one unknown device exists.
+
+    HIGH:
+        A device risk score is 80 or above.
+
+    MEDIUM:
+        Pending devices, newly visible devices or missing devices exist.
+
+    LOW:
+        All currently visible devices are trusted and no changes occurred.
+
+    Returns:
+        A text risk level.
+    """
+
+    if unknown_count > 0:
+        return "CRITICAL"
+
+    if highest_device_risk >= 80:
+        return "HIGH"
+
+    if (
+        pending_count > 0
+        or new_device_count > 0
+        or missing_device_count > 0
+    ):
+        return "MEDIUM"
+
+    return "LOW"
+
+
+def display_security_summary(
+    classified_devices,
+    updated_registry,
+    new_devices,
+    missing_devices
+):
+    """
+    Display a high-level security summary for the monitoring cycle.
+
+    This gives the operator a quick overview before investigating
+    individual device records.
+    """
+
+    trusted_count = 0
+    pending_count = 0
+    unknown_count = 0
+
+    # Count visible devices by their current inventory status.
+    for device in classified_devices:
+        if device["status"] == "TRUSTED":
+            trusted_count += 1
+
+        elif device["status"] == "PENDING":
+            pending_count += 1
+
+        else:
+            unknown_count += 1
+
+    highest_device_risk = 0
+
+    # Find the highest current risk score among visible devices.
+    for device in classified_devices:
+        mac_address = device["mac_address"]
+
+        if mac_address in updated_registry:
+            risk_score = updated_registry[mac_address]["risk_score"]
+
+            if risk_score > highest_device_risk:
+                highest_device_risk = risk_score
+
+    overall_risk = determine_overall_risk(
+        pending_count,
+        unknown_count,
+        len(new_devices),
+        len(missing_devices),
+        highest_device_risk
+    )
+
+    print()
+    print("=" * 60)
+    print("SENTINEL SECURITY SUMMARY")
+    print("=" * 60)
+
+    print(f"Devices Visible       : {len(classified_devices)}")
+    print(f"Trusted Devices       : {trusted_count}")
+    print(f"Pending Review        : {pending_count}")
+    print(f"Unknown Devices       : {unknown_count}")
+    print(f"Newly Visible         : {len(new_devices)}")
+    print(f"No Longer Visible     : {len(missing_devices)}")
+    print(f"Highest Device Risk   : {highest_device_risk}")
+    print(f"Overall Risk Level    : {overall_risk}")
+
+    print()
+
+    if overall_risk == "LOW":
+        print("Recommendation        : No immediate action required.")
+
+    elif overall_risk == "MEDIUM":
+        print("Recommendation        : Review recent network changes.")
+
+    elif overall_risk == "HIGH":
+        print("Recommendation        : Investigate high-risk devices.")
+
+    else:
+        print("Recommendation        : Investigate immediately.")
