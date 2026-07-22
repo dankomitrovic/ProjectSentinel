@@ -7,17 +7,18 @@ are presented in the terminal.
 It does not scan the network, modify inventories or save files.
 """
 
+from version import get_banner
+
 
 def display_banner():
     """
-    Display the Project Sentinel application heading.
+    Display the Project Sentinel application banner.
+
+    Application identity and version information are supplied by
+    version.py so they remain consistent throughout Sentinel.
     """
 
-    print()
-    print("=" * 60)
-    print("PROJECT SENTINEL")
-    print("Network Discovery and Trusted Device Monitoring")
-    print("=" * 60)
+    print(get_banner())
 
 
 def display_devices(classified_devices):
