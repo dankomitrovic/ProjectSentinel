@@ -2,6 +2,7 @@
 Project Sentinel storage operations.
 
 This module manages CSV files used by Sentinel.
+
 Other modules should not need to know how the information is stored.
 """
 
@@ -17,6 +18,8 @@ from config import (
     TRUSTED_DEVICES_FILE
 )
 
+from logger import log_debug, log_info
+
 
 def ensure_data_files():
     """
@@ -24,6 +27,7 @@ def ensure_data_files():
     """
 
     os.makedirs("data", exist_ok=True)
+    log_debug("Data directory verified")
 
     # Each file has its own header structure.
     files_and_headers = {
@@ -65,13 +69,26 @@ def ensure_data_files():
         ]
     }
 
+    created_count = 0
+
     # Only create files that do not already exist.
     # Existing information will not be overwritten.
     for file_path, headers in files_and_headers.items():
         if not os.path.exists(file_path):
-            with open(file_path, "w", newline="") as file:
+            with open(file_path, "w", newline="", encoding="utf-8") as file:
                 writer = csv.writer(file)
                 writer.writerow(headers)
+
+            created_count += 1
+            log_info(f"Created missing storage file: {file_path}")
+
+        else:
+            log_debug(f"Storage file verified: {file_path}")
+
+    log_debug(
+        f"Storage verification completed with "
+        f"{created_count} file(s) created"
+    )
 
 
 def load_latest_scan():
@@ -85,9 +102,17 @@ def load_latest_scan():
     devices = []
 
     if not os.path.exists(LATEST_SCAN_FILE):
+        log_debug(
+            f"Latest scan file not found: {LATEST_SCAN_FILE}"
+        )
         return devices
 
-    with open(LATEST_SCAN_FILE, "r", newline="") as file:
+    with open(
+        LATEST_SCAN_FILE,
+        "r",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         reader = csv.DictReader(file)
 
         for row in reader:
@@ -95,6 +120,11 @@ def load_latest_scan():
                 "ip_address": row["IP Address"],
                 "mac_address": row["MAC Address"].lower()
             })
+
+    log_debug(
+        f"Loaded {len(devices)} previous device record(s) "
+        f"from {LATEST_SCAN_FILE}"
+    )
 
     return devices
 
@@ -104,7 +134,12 @@ def save_latest_scan(devices):
     Replace the latest scan file with the current network state.
     """
 
-    with open(LATEST_SCAN_FILE, "w", newline="") as file:
+    with open(
+        LATEST_SCAN_FILE,
+        "w",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         writer = csv.writer(file)
 
         writer.writerow([
@@ -118,6 +153,11 @@ def save_latest_scan(devices):
                 device["mac_address"]
             ])
 
+    log_debug(
+        f"Saved latest scan with {len(devices)} device record(s) "
+        f"to {LATEST_SCAN_FILE}"
+    )
+
 
 def save_scan_history(devices):
     """
@@ -126,7 +166,12 @@ def save_scan_history(devices):
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    with open(SCAN_HISTORY_FILE, "a", newline="") as file:
+    with open(
+        SCAN_HISTORY_FILE,
+        "a",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         writer = csv.writer(file)
 
         for device in devices:
@@ -135,3 +180,8 @@ def save_scan_history(devices):
                 device["ip_address"],
                 device["mac_address"]
             ])
+
+    log_debug(
+        f"Appended {len(devices)} device record(s) "
+        f"to {SCAN_HISTORY_FILE}"
+    )

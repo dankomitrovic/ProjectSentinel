@@ -9,6 +9,7 @@ import csv
 from datetime import datetime
 
 from config import PENDING_DEVICES_FILE, TRUSTED_DEVICES_FILE
+from logger import log_debug, log_info, log_warning
 
 
 def load_trusted_devices():
@@ -17,14 +18,16 @@ def load_trusted_devices():
 
     Returns:
         A dictionary keyed by MAC address.
-
-    Using the MAC address as the key allows Sentinel to quickly retrieve
-    the complete profile for a trusted device.
     """
 
     trusted_devices = {}
 
-    with open(TRUSTED_DEVICES_FILE, "r", newline="") as file:
+    with open(
+        TRUSTED_DEVICES_FILE,
+        "r",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         reader = csv.DictReader(file)
 
         for row in reader:
@@ -39,6 +42,10 @@ def load_trusted_devices():
                     "notes": row["Notes"]
                 }
 
+    log_debug(
+        f"Loaded {len(trusted_devices)} trusted device profile(s)"
+    )
+
     return trusted_devices
 
 
@@ -48,13 +55,16 @@ def load_pending_mac_addresses():
 
     Returns:
         A set of pending MAC addresses.
-
-    A set prevents Sentinel from adding the same device repeatedly.
     """
 
     pending_mac_addresses = set()
 
-    with open(PENDING_DEVICES_FILE, "r", newline="") as file:
+    with open(
+        PENDING_DEVICES_FILE,
+        "r",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         reader = csv.DictReader(file)
 
         for row in reader:
@@ -62,6 +72,10 @@ def load_pending_mac_addresses():
 
             if mac_address:
                 pending_mac_addresses.add(mac_address)
+
+    log_debug(
+        f"Loaded {len(pending_mac_addresses)} pending device record(s)"
+    )
 
     return pending_mac_addresses
 
@@ -80,6 +94,10 @@ def classify_devices(devices, trusted_devices, pending_mac_addresses):
     """
 
     classified_devices = []
+
+    trusted_count = 0
+    pending_count = 0
+    unknown_count = 0
 
     for device in devices:
         mac_address = device["mac_address"].lower()
@@ -105,10 +123,23 @@ def classify_devices(devices, trusted_devices, pending_mac_addresses):
             classified_device["trust_level"] = profile["trust_level"]
             classified_device["notes"] = profile["notes"]
 
+            trusted_count += 1
+
         elif mac_address in pending_mac_addresses:
             classified_device["status"] = "PENDING"
+            pending_count += 1
+
+        else:
+            unknown_count += 1
 
         classified_devices.append(classified_device)
+
+    log_debug(
+        f"Device classification completed: "
+        f"trusted={trusted_count}, "
+        f"pending={pending_count}, "
+        f"unknown={unknown_count}"
+    )
 
     return classified_devices
 
@@ -130,7 +161,12 @@ def save_unknown_devices_to_pending(
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     added_count = 0
 
-    with open(PENDING_DEVICES_FILE, "a", newline="") as file:
+    with open(
+        PENDING_DEVICES_FILE,
+        "a",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         writer = csv.writer(file)
 
         for device in classified_devices:
@@ -147,8 +183,22 @@ def save_unknown_devices_to_pending(
                     "Pending Review"
                 ])
 
+                log_warning(
+                    f"Unknown device added to pending review: "
+                    f"name={device['friendly_name']}, "
+                    f"ip={device['ip_address']}, "
+                    f"mac={mac_address}"
+                )
+
                 pending_mac_addresses.add(mac_address)
                 device["status"] = "PENDING"
                 added_count += 1
+
+    if added_count > 0:
+        log_info(
+            f"Added {added_count} new device(s) to pending review"
+        )
+    else:
+        log_debug("No new devices added to pending review")
 
     return added_count

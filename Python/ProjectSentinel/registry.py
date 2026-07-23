@@ -11,6 +11,7 @@ import csv
 from datetime import datetime
 
 from config import DEVICE_REGISTRY_FILE
+from logger import log_debug
 
 
 def load_device_registry():
@@ -26,7 +27,12 @@ def load_device_registry():
 
     registry = {}
 
-    with open(DEVICE_REGISTRY_FILE, "r", newline="") as file:
+    with open(
+        DEVICE_REGISTRY_FILE,
+        "r",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         reader = csv.DictReader(file)
 
         for row in reader:
@@ -46,6 +52,10 @@ def load_device_registry():
                     "risk_score": int(row["Risk Score"]),
                     "notes": row["Notes"]
                 }
+
+    log_debug(
+        f"Loaded {len(registry)} permanent registry record(s)"
+    )
 
     return registry
 
@@ -93,32 +103,57 @@ def update_device_registry(classified_devices, registry):
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    updated_count = 0
+    created_count = 0
+
     for device in classified_devices:
         mac_address = device["mac_address"].lower()
         status = device["status"]
         risk_score = calculate_risk_score(status)
 
         if mac_address in registry:
-            # Retrieve the device's existing permanent record.
             registry_record = registry[mac_address]
 
-            # Keep the original first-seen timestamp, but update the
-            # information that may change during each monitoring cycle.
+            previous_ip = registry_record["current_ip"]
+            previous_status = registry_record["status"]
+            previous_risk_score = registry_record["risk_score"]
+
+            if previous_ip != device["ip_address"]:
+                log_debug(
+                    f"Device IP changed for {mac_address}: "
+                    f"{previous_ip} -> {device['ip_address']}"
+                )
+
+            if previous_status != status:
+                log_debug(
+                    f"Device status changed for {mac_address}: "
+                    f"{previous_status} -> {status}"
+                )
+
+            if previous_risk_score != risk_score:
+                log_debug(
+                    f"Device risk score changed for {mac_address}: "
+                    f"{previous_risk_score} -> {risk_score}"
+                )
+
             registry_record["current_ip"] = device["ip_address"]
             registry_record["last_seen"] = timestamp
             registry_record["times_seen"] += 1
             registry_record["status"] = status
             registry_record["risk_score"] = risk_score
 
-            # Trusted devices may have meaningful profile information.
-            # Pending devices normally retain blank profile fields.
             registry_record["friendly_name"] = device["friendly_name"]
             registry_record["owner"] = device["owner"]
             registry_record["device_type"] = device["device_type"]
             registry_record["notes"] = device["notes"]
 
+            updated_count += 1
+
+            log_debug(
+                f"Updated existing registry device: {mac_address}"
+            )
+
         else:
-            # This is the first time Sentinel has ever observed the device.
             registry[mac_address] = {
                 "mac_address": mac_address,
                 "current_ip": device["ip_address"],
@@ -133,6 +168,22 @@ def update_device_registry(classified_devices, registry):
                 "notes": device["notes"]
             }
 
+            created_count += 1
+
+            log_debug(
+                f"Created permanent registry record: "
+                f"mac={mac_address}, "
+                f"ip={device['ip_address']}, "
+                f"status={status}, "
+                f"risk={risk_score}"
+            )
+
+    log_debug(
+        f"Registry update completed: "
+        f"{updated_count} record(s) updated, "
+        f"{created_count} record(s) created"
+    )
+
     return registry
 
 
@@ -144,7 +195,12 @@ def save_device_registry(registry):
     First-seen information remains preserved inside each record.
     """
 
-    with open(DEVICE_REGISTRY_FILE, "w", newline="") as file:
+    with open(
+        DEVICE_REGISTRY_FILE,
+        "w",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         writer = csv.writer(file)
 
         writer.writerow([
@@ -178,3 +234,8 @@ def save_device_registry(registry):
                 device["risk_score"],
                 device["notes"]
             ])
+
+    log_debug(
+        f"Saved {len(registry)} permanent registry record(s) "
+        f"to {DEVICE_REGISTRY_FILE}"
+    )
