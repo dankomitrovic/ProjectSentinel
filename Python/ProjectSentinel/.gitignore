@@ -16,8 +16,7 @@ venv/
 # Runtime Data
 # ==========================================================
 
-data/latest_devices.csv
-data/scan_history.csv
+data/
 
 # ==========================================================
 # Runtime Logs
@@ -44,4 +43,4 @@ exports/*
 # ==========================================================
 
 .DS_Store
-Thumbs.dbdata/
+Thumbs.db
