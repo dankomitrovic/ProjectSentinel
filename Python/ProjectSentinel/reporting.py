@@ -21,6 +21,32 @@ def display_banner():
     print(get_banner())
 
 
+def display_open_services(open_ports):
+    """
+    Display discovered TCP services for one device.
+    """
+
+    print()
+    print("Open Services")
+    print("-" * 13)
+
+    if not open_ports:
+        print("None detected")
+        return
+
+    sorted_ports = sorted(
+        open_ports,
+        key=lambda service: service.get("port", 0)
+    )
+
+    for service in sorted_ports:
+        port = service.get("port", "Unknown")
+        protocol = service.get("protocol", "TCP")
+        service_name = service.get("service", "Unknown")
+
+        print(f"{port}/{protocol:<5} {service_name}")
+
+
 def display_devices(classified_devices):
     """
     Display every currently visible device and its inventory status.
@@ -76,6 +102,10 @@ def display_devices(classified_devices):
             print("Risk          : High")
             print("Action        : Investigate immediately")
 
+        display_open_services(
+            device.get("open_ports", [])
+        )
+
         device_number += 1
 
 
@@ -108,6 +138,10 @@ def display_changes(new_devices, missing_devices):
         print(f"IP Address    : {device['ip_address']}")
         print(f"MAC Address   : {device['mac_address']}")
         print(f"Vendor        : {device.get('vendor', 'Unknown')}")
+
+        display_open_services(
+            device.get("open_ports", [])
+        )
 
     for device in missing_devices:
         print()
@@ -201,6 +235,7 @@ def display_security_summary(
     trusted_count = 0
     pending_count = 0
     unknown_count = 0
+    total_open_ports = 0
 
     for device in classified_devices:
         if device["status"] == "TRUSTED":
@@ -211,6 +246,10 @@ def display_security_summary(
 
         else:
             unknown_count += 1
+
+        total_open_ports += len(
+            device.get("open_ports", [])
+        )
 
     highest_device_risk = 0
 
@@ -240,6 +279,7 @@ def display_security_summary(
     print(f"Trusted Devices       : {trusted_count}")
     print(f"Pending Review        : {pending_count}")
     print(f"Unknown Devices       : {unknown_count}")
+    print(f"Open TCP Services     : {total_open_ports}")
     print(f"Newly Visible         : {len(new_devices)}")
     print(f"No Longer Visible     : {len(missing_devices)}")
     print(f"Highest Device Risk   : {highest_device_risk}")

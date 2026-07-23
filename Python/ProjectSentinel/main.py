@@ -15,6 +15,8 @@ Scan network
     ↓
 Enrich discovered devices
     ↓
+Discover open TCP services
+    ↓
 Load trusted and pending inventories
     ↓
 Classify visible devices
@@ -58,6 +60,7 @@ from reporting import (
 )
 
 from scanner import discover_devices
+from service_scanner import scan_devices
 
 from storage import (
     ensure_data_files,
@@ -89,8 +92,12 @@ def main():
     # Discover devices currently visible on the network.
     discovered_devices = discover_devices()
 
-    # Add device-intelligence information such as MAC vendor.
-    current_devices = enrich_devices(discovered_devices)
+    # Add device-intelligence information such as vendor,
+    # hostname and basic device-type fingerprinting.
+    enriched_devices = enrich_devices(discovered_devices)
+
+    # Discover selected open TCP services on each local device.
+    current_devices = scan_devices(enriched_devices)
 
     # Load approved and pending device inventories.
     trusted_devices = load_trusted_devices()
