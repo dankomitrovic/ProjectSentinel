@@ -7,8 +7,8 @@ Unlike the pending and trusted files, the registry is not an approval
 workflow. It is Sentinel's permanent memory of discovered devices.
 
 The registry also stores the first established service baseline for
-each device. Future monitoring phases can compare current services
-against this baseline to identify behavioural changes.
+each device. Current service behaviour is compared against that
+baseline before the registry is updated.
 """
 
 import csv
@@ -17,57 +17,20 @@ from datetime import datetime
 
 from config import DEVICE_REGISTRY_FILE
 from logger import log_debug
+from risk_engine import calculate_risk_score
 
 
-BASE_RISK_SCORES = {
-    "TRUSTED": 10,
-    "PENDING": 60,
-    "UNKNOWN": 80
-}
+def safe_integer(value, default=0):
+    """
+    Convert a value into an integer.
 
-SERVICE_RISK_WEIGHTS = {
-    21: 20,
-    22: 5,
-    23: 30,
-    25: 10,
-    53: 3,
-    80: 5,
-    110: 15,
-    139: 15,
-    143: 10,
-    443: 2,
-    445: 15,
-    554: 8,
-    631: 5,
-    993: 3,
-    995: 3,
-    1883: 12,
-    3389: 20,
-    5000: 8,
-    5001: 5,
-    5353: 2,
-    8000: 8,
-    8080: 8,
-    8443: 5,
-    8883: 5,
-    9100: 8
-}
+    Returns the supplied default when the value is empty or invalid.
+    """
 
-SERVICE_STATUS_MULTIPLIERS = {
-    "OPEN": 1.0,
-    "PROBABLE": 0.4,
-    "UNVERIFIED": 0.2
-}
-
-HIGH_RISK_PORTS = {
-    21,
-    23,
-    110,
-    139,
-    445,
-    1883,
-    3389
-}
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def load_device_registry():
@@ -75,10 +38,10 @@ def load_device_registry():
     Load the existing device registry.
 
     Returns:
-        A dictionary keyed by MAC address.
+        A dictionary keyed by lowercase MAC address.
 
     Existing registry files without a Service Baseline column remain
-    compatible. Their baseline will be established during the next scan.
+    compatible. Their baseline will be established during a later scan.
     """
 
     registry = {}
@@ -92,30 +55,65 @@ def load_device_registry():
         reader = csv.DictReader(file)
 
         for row in reader:
-            mac_address = row["MAC Address"].strip().lower()
+            mac_address = row.get(
+                "MAC Address",
+                ""
+            ).strip().lower()
 
-            if mac_address:
-                registry[mac_address] = {
-                    "mac_address": mac_address,
-                    "current_ip": row["Current IP"],
-                    "friendly_name": row["Friendly Name"],
-                    "first_seen": row["First Seen"],
-                    "last_seen": row["Last Seen"],
-                    "times_seen": int(row["Times Seen"]),
-                    "status": row["Status"],
-                    "owner": row["Owner"],
-                    "device_type": row["Device Type"],
-                    "risk_score": int(row["Risk Score"]),
-                    "risk_reasons": row.get(
-                        "Risk Reasons",
-                        "Status-based risk assessment"
-                    ),
-                    "service_baseline": row.get(
-                        "Service Baseline",
-                        ""
-                    ),
-                    "notes": row["Notes"]
-                }
+            if not mac_address:
+                continue
+
+            registry[mac_address] = {
+                "mac_address": mac_address,
+                "current_ip": row.get(
+                    "Current IP",
+                    ""
+                ),
+                "friendly_name": row.get(
+                    "Friendly Name",
+                    "Unknown"
+                ),
+                "first_seen": row.get(
+                    "First Seen",
+                    ""
+                ),
+                "last_seen": row.get(
+                    "Last Seen",
+                    ""
+                ),
+                "times_seen": safe_integer(
+                    row.get("Times Seen"),
+                    0
+                ),
+                "status": row.get(
+                    "Status",
+                    "UNKNOWN"
+                ),
+                "owner": row.get(
+                    "Owner",
+                    ""
+                ),
+                "device_type": row.get(
+                    "Device Type",
+                    "Unknown"
+                ),
+                "risk_score": safe_integer(
+                    row.get("Risk Score"),
+                    0
+                ),
+                "risk_reasons": row.get(
+                    "Risk Reasons",
+                    "Status-based risk assessment"
+                ),
+                "service_baseline": row.get(
+                    "Service Baseline",
+                    ""
+                ),
+                "notes": row.get(
+                    "Notes",
+                    ""
+                )
+            }
 
     log_debug(
         f"Loaded {len(registry)} permanent registry record(s)"
@@ -124,65 +122,13 @@ def load_device_registry():
     return registry
 
 
-def is_virtualbox_infrastructure(device):
-    """
-    Return True when a device appears to be VirtualBox NAT infrastructure.
-
-    This prevents VirtualBox NAT connection behaviour from creating
-    misleading high-risk service alerts.
-    """
-
-    ip_address = device.get("ip_address", "")
-    friendly_name = device.get("friendly_name", "").lower()
-    notes = device.get("notes", "").lower()
-    detected_type = device.get(
-        "detected_device_type",
-        ""
-    ).lower()
-
-    return (
-        ip_address in {
-            "10.0.2.2",
-            "10.0.2.3",
-            "10.0.2.4"
-        }
-        and (
-            "virtualbox" in friendly_name
-            or "virtualbox" in notes
-            or detected_type == "infrastructure"
-        )
-    )
-
-
-def get_base_risk(status):
-    """
-    Return the base risk score for an inventory status.
-    """
-
-    return BASE_RISK_SCORES.get(
-        status,
-        BASE_RISK_SCORES["UNKNOWN"]
-    )
-
-
-def get_service_risk_weight(port):
-    """
-    Return the configured risk weight for a TCP service port.
-    """
-
-    return SERVICE_RISK_WEIGHTS.get(port, 5)
-
-
 def create_service_baseline(services):
     """
-    Create a stable JSON service baseline from current scan results.
+    Create stable JSON from the current service results.
 
-    Only information useful for future behavioural comparisons is stored.
-    Response times, banners and connection-attempt information are omitted
-    because those values may change slightly during normal operation.
-
-    Returns:
-        A JSON string containing the service baseline.
+    Only values useful for future behavioural comparison are retained.
+    Volatile details such as response times, banners and connection
+    attempts are deliberately excluded.
     """
 
     baseline_services = []
@@ -198,7 +144,10 @@ def create_service_baseline(services):
     for service in sorted_services:
         baseline_services.append({
             "port": service.get("port"),
-            "protocol": service.get("protocol", "TCP"),
+            "protocol": service.get(
+                "protocol",
+                "TCP"
+            ),
             "service": service.get(
                 "service",
                 "Unknown Service"
@@ -224,270 +173,231 @@ def establish_service_baseline(device):
     """
     Create the initial service baseline for one device.
 
-    An empty baseline is represented by an empty JSON list. This is
-    different from an empty string, which means no baseline has yet
-    been established.
+    An empty JSON list means a valid baseline was established and no
+    candidate services were visible. An empty string means no baseline
+    has yet been established.
+    """
+
+    services = device.get(
+        "open_ports",
+        []
+    )
+
+    return create_service_baseline(
+        services
+    )
+
+
+def update_existing_registry_record(
+    registry_record,
+    device,
+    timestamp,
+    risk_score,
+    risk_reasons_text
+):
+    """
+    Update one existing permanent registry record.
 
     Returns:
-        A JSON service-baseline string.
+        True when a new service baseline was established.
     """
 
-    services = device.get("open_ports", [])
+    mac_address = device[
+        "mac_address"
+    ].lower()
 
-    return create_service_baseline(services)
+    previous_ip = registry_record.get(
+        "current_ip",
+        ""
+    )
 
+    previous_status = registry_record.get(
+        "status",
+        "UNKNOWN"
+    )
 
-def calculate_service_risk(device, service):
-    """
-    Calculate the risk contribution from one detected service.
+    previous_risk_score = registry_record.get(
+        "risk_score",
+        0
+    )
 
-    Confirmed services receive their full configured weight.
-    Probable and unverified services receive reduced weight.
-
-    Trusted VirtualBox NAT infrastructure receives only a minimal
-    increase for probable port 445 results because VirtualBox may
-    make simple TCP checks appear successful without confirming SMB.
-
-    Returns:
-        A tuple containing:
-            service risk points
-            human-readable risk reason
-    """
-
-    port = service.get("port")
-    service_name = service.get("service", "Unknown Service")
-    service_status = service.get("status", "UNVERIFIED")
-    confidence = service.get("confidence", "Low")
-
-    if (
-        port == 445
-        and service_status == "PROBABLE"
-        and device.get("status") == "TRUSTED"
-        and is_virtualbox_infrastructure(device)
-    ):
-        return (
-            1,
-            "Probable SMB result on trusted VirtualBox NAT "
-            "infrastructure added minimal risk"
+    if previous_ip != device["ip_address"]:
+        log_debug(
+            f"Device IP changed for {mac_address}: "
+            f"{previous_ip} -> {device['ip_address']}"
         )
 
-    base_weight = get_service_risk_weight(port)
+    if previous_status != device["status"]:
+        log_debug(
+            f"Device status changed for {mac_address}: "
+            f"{previous_status} -> {device['status']}"
+        )
 
-    multiplier = SERVICE_STATUS_MULTIPLIERS.get(
-        service_status,
-        SERVICE_STATUS_MULTIPLIERS["UNVERIFIED"]
-    )
+    if previous_risk_score != risk_score:
+        log_debug(
+            f"Device risk score changed for {mac_address}: "
+            f"{previous_risk_score} -> {risk_score}"
+        )
 
-    service_risk = round(base_weight * multiplier)
-
-    if service_risk < 1:
-        service_risk = 1
-
-    reason = (
-        f"{service_status.title()} {service_name} service "
-        f"detected on {port}/TCP with {confidence.lower()} confidence "
-        f"(+{service_risk})"
-    )
-
-    return service_risk, reason
-
-
-def calculate_risk_score(device):
-    """
-    Calculate a device risk score using status and detected services.
-
-    Version 2 rules consider:
-
-        - inventory status
-        - confirmed, probable and unverified services
-        - higher-risk legacy or remote-access services
-        - additional exposure on pending or unknown devices
-        - VirtualBox NAT false-positive protection
-
-    Risk scores are capped at 100.
-
-    Returns:
-        A tuple containing:
-            numeric risk score
-            list of human-readable risk reasons
-    """
-
-    status = device.get("status", "UNKNOWN")
-    base_risk = get_base_risk(status)
-
-    risk_score = base_risk
-    risk_reasons = [
-        f"{status.title()} inventory status established "
-        f"base risk at {base_risk}"
+    registry_record["current_ip"] = device[
+        "ip_address"
     ]
 
-    services = device.get("open_ports", [])
+    registry_record["last_seen"] = timestamp
 
-    if not services:
-        risk_reasons.append(
-            "No candidate TCP services detected"
-        )
-
-        return risk_score, risk_reasons
-
-    confirmed_service_count = 0
-    probable_service_count = 0
-    unverified_service_count = 0
-    high_risk_service_count = 0
-
-    for service in services:
-        service_status = service.get(
-            "status",
-            "UNVERIFIED"
-        )
-
-        if service_status == "OPEN":
-            confirmed_service_count += 1
-
-        elif service_status == "PROBABLE":
-            probable_service_count += 1
-
-        else:
-            unverified_service_count += 1
-
-        port = service.get("port")
-
-        if port in HIGH_RISK_PORTS:
-            high_risk_service_count += 1
-
-        service_risk, service_reason = calculate_service_risk(
-            device,
-            service
-        )
-
-        risk_score += service_risk
-        risk_reasons.append(service_reason)
-
-    if status in {"PENDING", "UNKNOWN"} and services:
-        exposure_increase = 5
-
-        risk_score += exposure_increase
-
-        risk_reasons.append(
-            f"Unapproved device exposes candidate services "
-            f"(+{exposure_increase})"
-        )
-
-    if (
-        status == "UNKNOWN"
-        and high_risk_service_count > 0
-    ):
-        unknown_high_risk_increase = 5
-
-        risk_score += unknown_high_risk_increase
-
-        risk_reasons.append(
-            f"Unknown device exposes "
-            f"{high_risk_service_count} higher-risk service(s) "
-            f"(+{unknown_high_risk_increase})"
-        )
-
-    risk_reasons.append(
-        f"Service totals: "
-        f"confirmed={confirmed_service_count}, "
-        f"probable={probable_service_count}, "
-        f"unverified={unverified_service_count}"
+    registry_record["times_seen"] = (
+        registry_record.get("times_seen", 0)
+        + 1
     )
 
-    risk_score = min(risk_score, 100)
+    registry_record["status"] = device[
+        "status"
+    ]
 
-    return risk_score, risk_reasons
+    registry_record["risk_score"] = risk_score
+
+    registry_record[
+        "risk_reasons"
+    ] = risk_reasons_text
+
+    registry_record[
+        "friendly_name"
+    ] = device.get(
+        "friendly_name",
+        "Unknown"
+    )
+
+    registry_record["owner"] = device.get(
+        "owner",
+        ""
+    )
+
+    registry_record[
+        "device_type"
+    ] = device.get(
+        "device_type",
+        "Unknown"
+    )
+
+    registry_record["notes"] = device.get(
+        "notes",
+        ""
+    )
+
+    baseline_established = False
+
+    if not registry_record.get(
+        "service_baseline"
+    ):
+        registry_record[
+            "service_baseline"
+        ] = establish_service_baseline(
+            device
+        )
+
+        baseline_established = True
+
+        log_debug(
+            f"Established initial service baseline for "
+            f"existing device: {mac_address}"
+        )
+
+    return baseline_established
 
 
-def update_device_registry(classified_devices, registry):
+def create_registry_record(
+    device,
+    timestamp,
+    risk_score,
+    risk_reasons_text
+):
     """
-    Update Sentinel's permanent memory using the current scan.
+    Create a new permanent registry record.
+    """
 
-    Existing devices:
-        - keep their original first-seen timestamp
-        - receive a new last-seen timestamp
-        - increase their times-seen count
-        - receive updated inventory information
-        - receive a recalculated service-aware risk score
-        - receive a service baseline if one does not already exist
+    mac_address = device[
+        "mac_address"
+    ].lower()
 
-    New devices:
-        - receive first-seen and last-seen timestamps
-        - begin with a times-seen count of one
-        - receive a service-aware risk score
-        - receive an initial service baseline
+    return {
+        "mac_address": mac_address,
+        "current_ip": device["ip_address"],
+        "friendly_name": device.get(
+            "friendly_name",
+            "Unknown"
+        ),
+        "first_seen": timestamp,
+        "last_seen": timestamp,
+        "times_seen": 1,
+        "status": device["status"],
+        "owner": device.get(
+            "owner",
+            ""
+        ),
+        "device_type": device.get(
+            "device_type",
+            "Unknown"
+        ),
+        "risk_score": risk_score,
+        "risk_reasons": risk_reasons_text,
+        "service_baseline": (
+            establish_service_baseline(device)
+        ),
+        "notes": device.get(
+            "notes",
+            ""
+        )
+    }
 
-    Existing non-empty baselines are deliberately preserved. Sentinel
-    must not silently redefine normal behaviour during every scan.
+
+def update_device_registry(
+    classified_devices,
+    registry
+):
+    """
+    Update Sentinel's permanent device memory.
+
+    Behavioural comparison must occur before this function is called,
+    because existing service baselines are deliberately preserved.
 
     Returns:
         The updated registry dictionary.
     """
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
     updated_count = 0
     created_count = 0
     baseline_count = 0
 
     for device in classified_devices:
-        mac_address = device["mac_address"].lower()
-        status = device["status"]
+        mac_address = device[
+            "mac_address"
+        ].lower()
 
-        risk_score, risk_reasons = calculate_risk_score(
-            device
+        risk_score, risk_reasons = (
+            calculate_risk_score(device)
         )
 
-        risk_reasons_text = " | ".join(risk_reasons)
+        risk_reasons_text = " | ".join(
+            risk_reasons
+        )
 
         if mac_address in registry:
-            registry_record = registry[mac_address]
-
-            previous_ip = registry_record["current_ip"]
-            previous_status = registry_record["status"]
-            previous_risk_score = registry_record["risk_score"]
-
-            if previous_ip != device["ip_address"]:
-                log_debug(
-                    f"Device IP changed for {mac_address}: "
-                    f"{previous_ip} -> {device['ip_address']}"
+            baseline_established = (
+                update_existing_registry_record(
+                    registry[mac_address],
+                    device,
+                    timestamp,
+                    risk_score,
+                    risk_reasons_text
                 )
+            )
 
-            if previous_status != status:
-                log_debug(
-                    f"Device status changed for {mac_address}: "
-                    f"{previous_status} -> {status}"
-                )
-
-            if previous_risk_score != risk_score:
-                log_debug(
-                    f"Device risk score changed for {mac_address}: "
-                    f"{previous_risk_score} -> {risk_score}"
-                )
-
-            registry_record["current_ip"] = device["ip_address"]
-            registry_record["last_seen"] = timestamp
-            registry_record["times_seen"] += 1
-            registry_record["status"] = status
-            registry_record["risk_score"] = risk_score
-            registry_record["risk_reasons"] = risk_reasons_text
-
-            registry_record["friendly_name"] = device["friendly_name"]
-            registry_record["owner"] = device["owner"]
-            registry_record["device_type"] = device["device_type"]
-            registry_record["notes"] = device["notes"]
-
-            if not registry_record.get("service_baseline"):
-                registry_record["service_baseline"] = (
-                    establish_service_baseline(device)
-                )
-
+            if baseline_established:
                 baseline_count += 1
-
-                log_debug(
-                    f"Established initial service baseline for "
-                    f"existing device: {mac_address}"
-                )
 
             updated_count += 1
 
@@ -498,25 +408,14 @@ def update_device_registry(classified_devices, registry):
             )
 
         else:
-            service_baseline = establish_service_baseline(
-                device
+            registry[mac_address] = (
+                create_registry_record(
+                    device,
+                    timestamp,
+                    risk_score,
+                    risk_reasons_text
+                )
             )
-
-            registry[mac_address] = {
-                "mac_address": mac_address,
-                "current_ip": device["ip_address"],
-                "friendly_name": device["friendly_name"],
-                "first_seen": timestamp,
-                "last_seen": timestamp,
-                "times_seen": 1,
-                "status": status,
-                "owner": device["owner"],
-                "device_type": device["device_type"],
-                "risk_score": risk_score,
-                "risk_reasons": risk_reasons_text,
-                "service_baseline": service_baseline,
-                "notes": device["notes"]
-            }
 
             created_count += 1
             baseline_count += 1
@@ -525,7 +424,7 @@ def update_device_registry(classified_devices, registry):
                 f"Created permanent registry record: "
                 f"mac={mac_address}, "
                 f"ip={device['ip_address']}, "
-                f"status={status}, "
+                f"status={device['status']}, "
                 f"risk={risk_score}"
             )
 
@@ -546,11 +445,10 @@ def update_device_registry(classified_devices, registry):
 
 def save_device_registry(registry):
     """
-    Replace the registry CSV with the updated permanent device records.
+    Rewrite the permanent registry CSV.
 
-    The registry dictionary is rewritten after every monitoring cycle.
     First-seen information and established service baselines remain
-    preserved inside each record.
+    preserved inside each registry record.
     """
 
     with open(
@@ -577,20 +475,54 @@ def save_device_registry(registry):
             "Notes"
         ])
 
-        for mac_address in sorted(registry.keys()):
-            device = registry[mac_address]
+        for mac_address in sorted(
+            registry.keys()
+        ):
+            device = registry[
+                mac_address
+            ]
 
             writer.writerow([
-                device["mac_address"],
-                device["current_ip"],
-                device["friendly_name"],
-                device["first_seen"],
-                device["last_seen"],
-                device["times_seen"],
-                device["status"],
-                device["owner"],
-                device["device_type"],
-                device["risk_score"],
+                device.get(
+                    "mac_address",
+                    mac_address
+                ),
+                device.get(
+                    "current_ip",
+                    ""
+                ),
+                device.get(
+                    "friendly_name",
+                    "Unknown"
+                ),
+                device.get(
+                    "first_seen",
+                    ""
+                ),
+                device.get(
+                    "last_seen",
+                    ""
+                ),
+                device.get(
+                    "times_seen",
+                    0
+                ),
+                device.get(
+                    "status",
+                    "UNKNOWN"
+                ),
+                device.get(
+                    "owner",
+                    ""
+                ),
+                device.get(
+                    "device_type",
+                    "Unknown"
+                ),
+                device.get(
+                    "risk_score",
+                    0
+                ),
                 device.get(
                     "risk_reasons",
                     "No risk reasons recorded"
@@ -599,7 +531,10 @@ def save_device_registry(registry):
                     "service_baseline",
                     ""
                 ),
-                device["notes"]
+                device.get(
+                    "notes",
+                    ""
+                )
             ])
 
     log_debug(
