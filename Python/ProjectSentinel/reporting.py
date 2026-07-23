@@ -44,6 +44,7 @@ def display_devices(classified_devices):
         print("-" * 60)
 
         print(f"Name       : {device['friendly_name']}")
+        print(f"Hostname   : {device.get('hostname', 'Unknown')}")
         print(f"IP Address : {device['ip_address']}")
         print(f"MAC Address: {device['mac_address']}")
         print(f"Vendor     : {device.get('vendor', 'Unknown')}")
@@ -83,6 +84,7 @@ def display_changes(new_devices, missing_devices):
     for device in new_devices:
         print()
         print("NEWLY VISIBLE DEVICE")
+        print(f"Hostname   : {device.get('hostname', 'Unknown')}")
         print(f"IP Address : {device['ip_address']}")
         print(f"MAC Address: {device['mac_address']}")
         print(f"Vendor     : {device.get('vendor', 'Unknown')}")
@@ -90,6 +92,7 @@ def display_changes(new_devices, missing_devices):
     for device in missing_devices:
         print()
         print("DEVICE NO LONGER VISIBLE")
+        print(f"Hostname   : {device.get('hostname', 'Unknown')}")
         print(f"Previous IP: {device['ip_address']}")
         print(f"MAC Address: {device['mac_address']}")
         print(f"Vendor     : {device.get('vendor', 'Unknown')}")

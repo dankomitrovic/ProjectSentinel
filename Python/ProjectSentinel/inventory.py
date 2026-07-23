@@ -90,7 +90,8 @@ def classify_devices(devices, trusted_devices, pending_mac_addresses):
         UNKNOWN
 
     Returns:
-        A new list containing each device and its inventory status.
+        A new list containing each device, its intelligence data
+        and its inventory status.
     """
 
     classified_devices = []
@@ -105,6 +106,8 @@ def classify_devices(devices, trusted_devices, pending_mac_addresses):
         classified_device = {
             "ip_address": device["ip_address"],
             "mac_address": mac_address,
+            "hostname": device.get("hostname", "Unknown"),
+            "vendor": device.get("vendor", "Unknown"),
             "status": "UNKNOWN",
             "friendly_name": "Unknown Device",
             "owner": "",
@@ -186,6 +189,8 @@ def save_unknown_devices_to_pending(
                 log_warning(
                     f"Unknown device added to pending review: "
                     f"name={device['friendly_name']}, "
+                    f"hostname={device.get('hostname', 'Unknown')}, "
+                    f"vendor={device.get('vendor', 'Unknown')}, "
                     f"ip={device['ip_address']}, "
                     f"mac={mac_address}"
                 )

@@ -3,8 +3,13 @@ Project Sentinel device intelligence.
 
 This module enriches discovered devices with additional information.
 
-Mission Lima begins with MAC address vendor identification.
+Mission Lima provides device enrichment including:
+
+- MAC vendor identification
+- Hostname resolution
 """
+
+import socket
 
 from mac_vendor_lookup import MacLookup, VendorNotFoundError
 
@@ -58,12 +63,51 @@ def lookup_vendor(mac_address):
         return UNKNOWN_VENDOR_NAME
 
 
+def lookup_hostname(ip_address):
+    """
+    Attempt to resolve the hostname for an IP address.
+
+    Returns:
+        The resolved hostname or "Unknown" if no hostname
+        can be determined.
+    """
+
+    if not ip_address:
+        log_debug(
+            "Hostname lookup skipped because no IP address was supplied"
+        )
+        return "Unknown"
+
+    try:
+        hostname, _, _ = socket.gethostbyaddr(ip_address)
+
+        log_debug(
+            f"Hostname identified for {ip_address}: {hostname}"
+        )
+
+        return hostname
+
+    except (socket.herror, socket.gaierror):
+        log_debug(
+            f"No hostname found for {ip_address}"
+        )
+
+        return "Unknown"
+
+    except OSError as error:
+        log_warning(
+            f"Hostname lookup failed for {ip_address}: {error}"
+        )
+
+        return "Unknown"
+
+
 def enrich_devices(devices):
     """
     Add device-intelligence information to discovered devices.
 
-    Each returned dictionary contains the original device information
-    plus a vendor field.
+    Each returned dictionary contains the original device
+    information plus enrichment fields.
     """
 
     log_debug(
@@ -80,13 +124,18 @@ def enrich_devices(devices):
             device.get("mac_address")
         )
 
+        enriched_device["hostname"] = lookup_hostname(
+            device.get("ip_address")
+        )
+
         enriched_devices.append(enriched_device)
 
         log_debug(
             f"Enriched device "
             f"{enriched_device.get('ip_address')} "
             f"({enriched_device.get('mac_address')}): "
-            f"vendor={enriched_device['vendor']}"
+            f"vendor={enriched_device['vendor']}, "
+            f"hostname={enriched_device['hostname']}"
         )
 
     log_debug(
