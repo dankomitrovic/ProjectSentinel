@@ -45,25 +45,31 @@ def display_open_services(open_ports):
         service_name = service.get("service", "Unknown")
         status = service.get("status", "UNVERIFIED")
         confidence = service.get("confidence", "Low")
+
         successful_attempts = service.get(
             "successful_attempts",
             0
         )
+
         total_attempts = service.get(
             "total_attempts",
             0
         )
+
         response_time = service.get(
             "response_time_ms"
         )
+
         banner_confirmed = service.get(
             "banner_confirmed",
             False
         )
+
         validation_reason = service.get(
             "validation_reason",
             "No validation information available"
         )
+
         banner = service.get("banner", "")
 
         print()
@@ -95,6 +101,188 @@ def display_open_services(open_ports):
             print(f"Banner        : {banner}")
 
 
+def format_service_endpoint(service):
+    """
+    Return a readable service endpoint description.
+
+    Example:
+        445/TCP SMB
+    """
+
+    port = service.get("port", "Unknown")
+    protocol = service.get("protocol", "TCP")
+    service_name = service.get(
+        "service",
+        "Unknown Service"
+    )
+
+    return f"{port}/{protocol} {service_name}"
+
+
+def display_behaviour_analysis(behaviour_analysis):
+    """
+    Display service behaviour compared with the stored baseline.
+    """
+
+    print()
+    print("Service Behaviour")
+    print("-" * 17)
+
+    if not behaviour_analysis:
+        print("Status        : Not analysed")
+        return
+
+    behaviour_status = behaviour_analysis.get(
+        "behaviour_status",
+        "UNKNOWN"
+    )
+
+    baseline_error = behaviour_analysis.get(
+        "baseline_error",
+        ""
+    )
+
+    print(f"Status        : {behaviour_status}")
+
+    if behaviour_status == "NO_REGISTRY_RECORD":
+        print("Comparison    : No permanent registry record available")
+        return
+
+    if behaviour_status == "NOT_ESTABLISHED":
+        print("Comparison    : Service baseline not yet established")
+        return
+
+    if behaviour_status == "INVALID":
+        print("Comparison    : Stored service baseline is invalid")
+
+        if baseline_error:
+            print(f"Error         : {baseline_error}")
+
+        return
+
+    baseline_service_count = behaviour_analysis.get(
+        "baseline_service_count",
+        0
+    )
+
+    current_service_count = behaviour_analysis.get(
+        "current_service_count",
+        0
+    )
+
+    change_count = behaviour_analysis.get(
+        "change_count",
+        0
+    )
+
+    print(
+        f"Service Count : "
+        f"{baseline_service_count} baseline / "
+        f"{current_service_count} current"
+    )
+
+    print(f"Changes       : {change_count}")
+
+    if behaviour_status == "UNCHANGED":
+        print("Assessment    : Current services match baseline")
+        return
+
+    new_services = behaviour_analysis.get(
+        "new_services",
+        []
+    )
+
+    missing_services = behaviour_analysis.get(
+        "missing_services",
+        []
+    )
+
+    changed_services = behaviour_analysis.get(
+        "changed_services",
+        []
+    )
+
+    if new_services:
+        print()
+        print("New Services")
+
+        for service in new_services:
+            endpoint = format_service_endpoint(service)
+            status = service.get("status", "UNVERIFIED")
+            confidence = service.get("confidence", "LOW")
+
+            print(
+                f"  + {endpoint} "
+                f"[{status}, {confidence}]"
+            )
+
+    if missing_services:
+        print()
+        print("Missing Services")
+
+        for service in missing_services:
+            endpoint = format_service_endpoint(service)
+            status = service.get("status", "UNVERIFIED")
+            confidence = service.get("confidence", "LOW")
+
+            print(
+                f"  - {endpoint} "
+                f"[baseline: {status}, {confidence}]"
+            )
+
+    if changed_services:
+        print()
+        print("Changed Services")
+
+        for comparison in changed_services:
+            service_key = comparison.get(
+                "service_key",
+                "Unknown"
+            )
+
+            current_service = comparison.get(
+                "current",
+                {}
+            )
+
+            service_name = current_service.get(
+                "service",
+                "Unknown Service"
+            )
+
+            print(f"  * {service_key} {service_name}")
+
+            for change in comparison.get(
+                "changes",
+                []
+            ):
+                field = change.get(
+                    "field",
+                    "value"
+                ).title()
+
+                previous_value = change.get(
+                    "previous",
+                    "Unknown"
+                )
+
+                current_value = change.get(
+                    "current",
+                    "Unknown"
+                )
+
+                direction = change.get(
+                    "direction",
+                    "CHANGED"
+                )
+
+                print(
+                    f"      {field}: "
+                    f"{previous_value} -> {current_value} "
+                    f"({direction})"
+                )
+
+
 def display_devices(classified_devices):
     """
     Display every currently visible device and its inventory status.
@@ -118,19 +306,26 @@ def display_devices(classified_devices):
         print("-" * 60)
 
         print(f"Name          : {device['friendly_name']}")
-        print(f"Hostname      : {device.get('hostname', 'Unknown')}")
+        print(
+            f"Hostname      : "
+            f"{device.get('hostname', 'Unknown')}"
+        )
+
         print(
             f"Detected Type : "
             f"{device.get('detected_device_type', 'Unknown')}"
         )
+
         print(
             f"Confidence    : "
             f"{device.get('detection_confidence', 'Low')}"
         )
+
         print(
             f"Reason        : "
             f"{device.get('detection_reason', 'Not available')}"
         )
+
         print(f"IP Address    : {device['ip_address']}")
         print(f"MAC Address   : {device['mac_address']}")
         print(f"Vendor        : {device.get('vendor', 'Unknown')}")
@@ -154,6 +349,10 @@ def display_devices(classified_devices):
             device.get("open_ports", [])
         )
 
+        display_behaviour_analysis(
+            device.get("behaviour_analysis", {})
+        )
+
         device_number += 1
 
 
@@ -174,15 +373,21 @@ def display_changes(new_devices, missing_devices):
     for device in new_devices:
         print()
         print("NEWLY VISIBLE DEVICE")
-        print(f"Hostname      : {device.get('hostname', 'Unknown')}")
+        print(
+            f"Hostname      : "
+            f"{device.get('hostname', 'Unknown')}"
+        )
+
         print(
             f"Detected Type : "
             f"{device.get('detected_device_type', 'Unknown')}"
         )
+
         print(
             f"Confidence    : "
             f"{device.get('detection_confidence', 'Low')}"
         )
+
         print(f"IP Address    : {device['ip_address']}")
         print(f"MAC Address   : {device['mac_address']}")
         print(f"Vendor        : {device.get('vendor', 'Unknown')}")
@@ -194,11 +399,16 @@ def display_changes(new_devices, missing_devices):
     for device in missing_devices:
         print()
         print("DEVICE NO LONGER VISIBLE")
-        print(f"Hostname      : {device.get('hostname', 'Unknown')}")
+        print(
+            f"Hostname      : "
+            f"{device.get('hostname', 'Unknown')}"
+        )
+
         print(
             f"Detected Type : "
             f"{device.get('detected_device_type', 'Unknown')}"
         )
+
         print(f"Previous IP   : {device['ip_address']}")
         print(f"MAC Address   : {device['mac_address']}")
         print(f"Vendor        : {device.get('vendor', 'Unknown')}")
@@ -228,12 +438,13 @@ def determine_overall_risk(
     unknown_count,
     new_device_count,
     missing_device_count,
-    highest_device_risk
+    highest_device_risk,
+    changed_behaviour_count
 ):
     """
     Determine Sentinel's overall risk level for the monitoring cycle.
 
-    Version 1 rules:
+    Rules:
 
     CRITICAL:
         At least one unknown device exists.
@@ -242,7 +453,8 @@ def determine_overall_risk(
         A device risk score is 80 or above.
 
     MEDIUM:
-        Pending devices, newly visible devices or missing devices exist.
+        Pending devices, network-presence changes or service-behaviour
+        changes exist.
 
     LOW:
         All currently visible devices are trusted and no changes occurred.
@@ -261,6 +473,7 @@ def determine_overall_risk(
         pending_count > 0
         or new_device_count > 0
         or missing_device_count > 0
+        or changed_behaviour_count > 0
     ):
         return "MEDIUM"
 
@@ -296,6 +509,69 @@ def count_service_statuses(classified_devices):
     return counts
 
 
+def count_behaviour_results(classified_devices):
+    """
+    Count behavioural comparison results across visible devices.
+
+    Returns:
+        A dictionary containing device and service-change totals.
+    """
+
+    counts = {
+        "CHANGED": 0,
+        "UNCHANGED": 0,
+        "UNAVAILABLE": 0,
+        "NEW_SERVICES": 0,
+        "MISSING_SERVICES": 0,
+        "CHANGED_SERVICES": 0,
+        "TOTAL_CHANGES": 0
+    }
+
+    for device in classified_devices:
+        analysis = device.get(
+            "behaviour_analysis",
+            {}
+        )
+
+        behaviour_status = analysis.get(
+            "behaviour_status",
+            "UNKNOWN"
+        )
+
+        if behaviour_status == "CHANGED":
+            counts["CHANGED"] += 1
+
+        elif behaviour_status == "UNCHANGED":
+            counts["UNCHANGED"] += 1
+
+        else:
+            counts["UNAVAILABLE"] += 1
+
+        new_service_count = len(
+            analysis.get("new_services", [])
+        )
+
+        missing_service_count = len(
+            analysis.get("missing_services", [])
+        )
+
+        changed_service_count = len(
+            analysis.get("changed_services", [])
+        )
+
+        counts["NEW_SERVICES"] += new_service_count
+        counts["MISSING_SERVICES"] += missing_service_count
+        counts["CHANGED_SERVICES"] += changed_service_count
+
+        counts["TOTAL_CHANGES"] += (
+            new_service_count
+            + missing_service_count
+            + changed_service_count
+        )
+
+    return counts
+
+
 def display_security_summary(
     classified_devices,
     updated_registry,
@@ -327,6 +603,10 @@ def display_security_summary(
         classified_devices
     )
 
+    behaviour_counts = count_behaviour_results(
+        classified_devices
+    )
+
     total_candidate_services = (
         service_counts["OPEN"]
         + service_counts["PROBABLE"]
@@ -339,7 +619,9 @@ def display_security_summary(
         mac_address = device["mac_address"]
 
         if mac_address in updated_registry:
-            risk_score = updated_registry[mac_address]["risk_score"]
+            risk_score = updated_registry[
+                mac_address
+            ]["risk_score"]
 
             if risk_score > highest_device_risk:
                 highest_device_risk = risk_score
@@ -349,7 +631,8 @@ def display_security_summary(
         unknown_count,
         len(new_devices),
         len(missing_devices),
-        highest_device_risk
+        highest_device_risk,
+        behaviour_counts["CHANGED"]
     )
 
     print()
@@ -365,6 +648,13 @@ def display_security_summary(
     print(f"Confirmed Open        : {service_counts['OPEN']}")
     print(f"Probable Services     : {service_counts['PROBABLE']}")
     print(f"Unverified Services   : {service_counts['UNVERIFIED']}")
+    print(f"Behaviour Changed     : {behaviour_counts['CHANGED']}")
+    print(f"Behaviour Unchanged   : {behaviour_counts['UNCHANGED']}")
+    print(f"Comparison Unavailable: {behaviour_counts['UNAVAILABLE']}")
+    print(f"New Services          : {behaviour_counts['NEW_SERVICES']}")
+    print(f"Missing Services      : {behaviour_counts['MISSING_SERVICES']}")
+    print(f"Changed Services      : {behaviour_counts['CHANGED_SERVICES']}")
+    print(f"Total Service Changes : {behaviour_counts['TOTAL_CHANGES']}")
     print(f"Newly Visible         : {len(new_devices)}")
     print(f"No Longer Visible     : {len(missing_devices)}")
     print(f"Highest Device Risk   : {highest_device_risk}")
@@ -373,13 +663,31 @@ def display_security_summary(
     print()
 
     if overall_risk == "LOW":
-        print("Recommendation        : No immediate action required.")
+        print(
+            "Recommendation        : "
+            "No immediate action required."
+        )
 
     elif overall_risk == "MEDIUM":
-        print("Recommendation        : Review recent network changes.")
+        if behaviour_counts["CHANGED"] > 0:
+            print(
+                "Recommendation        : "
+                "Review detected service-behaviour changes."
+            )
+        else:
+            print(
+                "Recommendation        : "
+                "Review recent network changes."
+            )
 
     elif overall_risk == "HIGH":
-        print("Recommendation        : Investigate high-risk devices.")
+        print(
+            "Recommendation        : "
+            "Investigate high-risk devices."
+        )
 
     else:
-        print("Recommendation        : Investigate immediately.")
+        print(
+            "Recommendation        : "
+            "Investigate immediately."
+        )

@@ -15,13 +15,17 @@ Scan network
     ↓
 Enrich discovered devices
     ↓
-Discover open TCP services
+Discover and validate TCP services
     ↓
 Load trusted and pending inventories
     ↓
 Classify visible devices
     ↓
 Add unknown devices to pending review
+    ↓
+Load permanent device registry
+    ↓
+Compare current services with established baselines
     ↓
 Update permanent device registry
     ↓
@@ -31,6 +35,8 @@ Display security findings
     ↓
 Save current state and history
 """
+
+from behaviour_analyzer import analyse_device_behaviours
 
 from detection import compare_scans
 
@@ -96,7 +102,7 @@ def main():
     # hostname and basic device-type fingerprinting.
     enriched_devices = enrich_devices(discovered_devices)
 
-    # Discover selected open TCP services on each local device.
+    # Discover and validate selected TCP services on each local device.
     current_devices = scan_devices(enriched_devices)
 
     # Load approved and pending device inventories.
@@ -117,17 +123,32 @@ def main():
         pending_mac_addresses
     )
 
-    # Load and update Sentinel's permanent device memory.
+    # Load Sentinel's permanent device memory before behavioural analysis.
+    #
+    # Behavioural comparison must occur before the registry is updated.
+    # Otherwise Sentinel could overwrite or establish a baseline before
+    # comparing the current services against the previously known state.
     device_registry = load_device_registry()
 
-    updated_registry = update_device_registry(
+    # Compare current service exposure against each device's established
+    # service baseline. Results are added to the classified device records.
+    analysed_devices = analyse_device_behaviours(
         classified_devices,
+        device_registry
+    )
+
+    # Update Sentinel's permanent memory only after behavioural comparison.
+    #
+    # Existing service baselines remain unchanged. Devices without a
+    # baseline receive their initial baseline during this update.
+    updated_registry = update_device_registry(
+        analysed_devices,
         device_registry
     )
 
     save_device_registry(updated_registry)
 
-    # Compare previous and current network states.
+    # Compare previous and current network-presence states.
     new_devices, missing_devices = compare_scans(
         previous_devices,
         current_devices
@@ -135,14 +156,14 @@ def main():
 
     # Present the high-level security position first.
     display_security_summary(
-        classified_devices,
+        analysed_devices,
         updated_registry,
         new_devices,
         missing_devices
     )
 
     # Present detailed findings after the summary.
-    display_devices(classified_devices)
+    display_devices(analysed_devices)
     display_changes(new_devices, missing_devices)
     display_pending_result(added_count)
 
