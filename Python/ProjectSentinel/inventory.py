@@ -108,6 +108,18 @@ def classify_devices(devices, trusted_devices, pending_mac_addresses):
             "mac_address": mac_address,
             "hostname": device.get("hostname", "Unknown"),
             "vendor": device.get("vendor", "Unknown"),
+            "detected_device_type": device.get(
+                "detected_device_type",
+                "Unknown"
+            ),
+            "detection_confidence": device.get(
+                "detection_confidence",
+                "Low"
+            ),
+            "detection_reason": device.get(
+                "detection_reason",
+                "Not available"
+            ),
             "status": "UNKNOWN",
             "friendly_name": "Unknown Device",
             "owner": "",
@@ -191,6 +203,10 @@ def save_unknown_devices_to_pending(
                     f"name={device['friendly_name']}, "
                     f"hostname={device.get('hostname', 'Unknown')}, "
                     f"vendor={device.get('vendor', 'Unknown')}, "
+                    f"detected_type="
+                    f"{device.get('detected_device_type', 'Unknown')}, "
+                    f"confidence="
+                    f"{device.get('detection_confidence', 'Low')}, "
                     f"ip={device['ip_address']}, "
                     f"mac={mac_address}"
                 )

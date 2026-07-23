@@ -43,26 +43,38 @@ def display_devices(classified_devices):
         print(f"Device {device_number}")
         print("-" * 60)
 
-        print(f"Name       : {device['friendly_name']}")
-        print(f"Hostname   : {device.get('hostname', 'Unknown')}")
-        print(f"IP Address : {device['ip_address']}")
-        print(f"MAC Address: {device['mac_address']}")
-        print(f"Vendor     : {device.get('vendor', 'Unknown')}")
-        print(f"Status     : {device['status']}")
+        print(f"Name          : {device['friendly_name']}")
+        print(f"Hostname      : {device.get('hostname', 'Unknown')}")
+        print(
+            f"Detected Type : "
+            f"{device.get('detected_device_type', 'Unknown')}"
+        )
+        print(
+            f"Confidence    : "
+            f"{device.get('detection_confidence', 'Low')}"
+        )
+        print(
+            f"Reason        : "
+            f"{device.get('detection_reason', 'Not available')}"
+        )
+        print(f"IP Address    : {device['ip_address']}")
+        print(f"MAC Address   : {device['mac_address']}")
+        print(f"Vendor        : {device.get('vendor', 'Unknown')}")
+        print(f"Status        : {device['status']}")
 
         if device["status"] == "TRUSTED":
-            print(f"Owner      : {device['owner']}")
-            print(f"Type       : {device['device_type']}")
-            print(f"Trust Level: {device['trust_level']}")
-            print(f"Notes      : {device['notes']}")
+            print(f"Owner         : {device['owner']}")
+            print(f"Recorded Type : {device['device_type']}")
+            print(f"Trust Level   : {device['trust_level']}")
+            print(f"Notes         : {device['notes']}")
 
         elif device["status"] == "PENDING":
-            print("Risk       : Review Required")
-            print("Action     : Awaiting manual approval")
+            print("Risk          : Review Required")
+            print("Action        : Awaiting manual approval")
 
         else:
-            print("Risk       : High")
-            print("Action     : Investigate immediately")
+            print("Risk          : High")
+            print("Action        : Investigate immediately")
 
         device_number += 1
 
@@ -84,18 +96,30 @@ def display_changes(new_devices, missing_devices):
     for device in new_devices:
         print()
         print("NEWLY VISIBLE DEVICE")
-        print(f"Hostname   : {device.get('hostname', 'Unknown')}")
-        print(f"IP Address : {device['ip_address']}")
-        print(f"MAC Address: {device['mac_address']}")
-        print(f"Vendor     : {device.get('vendor', 'Unknown')}")
+        print(f"Hostname      : {device.get('hostname', 'Unknown')}")
+        print(
+            f"Detected Type : "
+            f"{device.get('detected_device_type', 'Unknown')}"
+        )
+        print(
+            f"Confidence    : "
+            f"{device.get('detection_confidence', 'Low')}"
+        )
+        print(f"IP Address    : {device['ip_address']}")
+        print(f"MAC Address   : {device['mac_address']}")
+        print(f"Vendor        : {device.get('vendor', 'Unknown')}")
 
     for device in missing_devices:
         print()
         print("DEVICE NO LONGER VISIBLE")
-        print(f"Hostname   : {device.get('hostname', 'Unknown')}")
-        print(f"Previous IP: {device['ip_address']}")
-        print(f"MAC Address: {device['mac_address']}")
-        print(f"Vendor     : {device.get('vendor', 'Unknown')}")
+        print(f"Hostname      : {device.get('hostname', 'Unknown')}")
+        print(
+            f"Detected Type : "
+            f"{device.get('detected_device_type', 'Unknown')}"
+        )
+        print(f"Previous IP   : {device['ip_address']}")
+        print(f"MAC Address   : {device['mac_address']}")
+        print(f"Vendor        : {device.get('vendor', 'Unknown')}")
 
 
 def display_pending_result(added_count):
