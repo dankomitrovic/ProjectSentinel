@@ -27,8 +27,8 @@ def display_open_services(open_ports):
     """
 
     print()
-    print("Open Services")
-    print("-" * 13)
+    print("Detected Services")
+    print("-" * 17)
 
     if not open_ports:
         print("None detected")
@@ -43,8 +43,56 @@ def display_open_services(open_ports):
         port = service.get("port", "Unknown")
         protocol = service.get("protocol", "TCP")
         service_name = service.get("service", "Unknown")
+        status = service.get("status", "UNVERIFIED")
+        confidence = service.get("confidence", "Low")
+        successful_attempts = service.get(
+            "successful_attempts",
+            0
+        )
+        total_attempts = service.get(
+            "total_attempts",
+            0
+        )
+        response_time = service.get(
+            "response_time_ms"
+        )
+        banner_confirmed = service.get(
+            "banner_confirmed",
+            False
+        )
+        validation_reason = service.get(
+            "validation_reason",
+            "No validation information available"
+        )
+        banner = service.get("banner", "")
 
-        print(f"{port}/{protocol:<5} {service_name}")
+        print()
+        print(f"Service       : {service_name}")
+        print(f"Port          : {port}/{protocol}")
+        print(f"Status        : {status}")
+        print(f"Confidence    : {confidence}")
+        print(
+            f"Connections   : "
+            f"{successful_attempts}/{total_attempts}"
+        )
+
+        if response_time is None:
+            print("Response Time : Not available")
+        else:
+            print(
+                f"Response Time : "
+                f"{response_time} ms average"
+            )
+
+        if banner_confirmed:
+            print("Banner Match  : Confirmed")
+        else:
+            print("Banner Match  : Not confirmed")
+
+        print(f"Validation    : {validation_reason}")
+
+        if banner:
+            print(f"Banner        : {banner}")
 
 
 def display_devices(classified_devices):
@@ -219,6 +267,35 @@ def determine_overall_risk(
     return "LOW"
 
 
+def count_service_statuses(classified_devices):
+    """
+    Count service validation statuses across all visible devices.
+
+    Returns:
+        A dictionary containing OPEN, PROBABLE and UNVERIFIED counts.
+    """
+
+    counts = {
+        "OPEN": 0,
+        "PROBABLE": 0,
+        "UNVERIFIED": 0
+    }
+
+    for device in classified_devices:
+        for service in device.get("open_ports", []):
+            status = service.get(
+                "status",
+                "UNVERIFIED"
+            )
+
+            if status in counts:
+                counts[status] += 1
+            else:
+                counts["UNVERIFIED"] += 1
+
+    return counts
+
+
 def display_security_summary(
     classified_devices,
     updated_registry,
@@ -235,7 +312,6 @@ def display_security_summary(
     trusted_count = 0
     pending_count = 0
     unknown_count = 0
-    total_open_ports = 0
 
     for device in classified_devices:
         if device["status"] == "TRUSTED":
@@ -247,9 +323,15 @@ def display_security_summary(
         else:
             unknown_count += 1
 
-        total_open_ports += len(
-            device.get("open_ports", [])
-        )
+    service_counts = count_service_statuses(
+        classified_devices
+    )
+
+    total_candidate_services = (
+        service_counts["OPEN"]
+        + service_counts["PROBABLE"]
+        + service_counts["UNVERIFIED"]
+    )
 
     highest_device_risk = 0
 
@@ -279,7 +361,10 @@ def display_security_summary(
     print(f"Trusted Devices       : {trusted_count}")
     print(f"Pending Review        : {pending_count}")
     print(f"Unknown Devices       : {unknown_count}")
-    print(f"Open TCP Services     : {total_open_ports}")
+    print(f"Candidate Services    : {total_candidate_services}")
+    print(f"Confirmed Open        : {service_counts['OPEN']}")
+    print(f"Probable Services     : {service_counts['PROBABLE']}")
+    print(f"Unverified Services   : {service_counts['UNVERIFIED']}")
     print(f"Newly Visible         : {len(new_devices)}")
     print(f"No Longer Visible     : {len(missing_devices)}")
     print(f"Highest Device Risk   : {highest_device_risk}")
