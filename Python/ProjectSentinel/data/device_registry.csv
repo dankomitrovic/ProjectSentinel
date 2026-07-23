@@ -1,4 +1,0 @@
-MAC Address,Current IP,Friendly Name,First Seen,Last Seen,Times Seen,Status,Owner,Device Type,Risk Score,Notes
-52:54:00:12:35:02,10.0.2.2,VirtualBox Gateway,2026-07-21 19:12:41,2026-07-22 03:06:13,5,TRUSTED,Sentinel,Infrastructure,10,VirtualBox NAT
-52:54:00:12:35:03,10.0.2.3,VirtualBox DNS,2026-07-21 19:12:41,2026-07-22 03:06:13,5,TRUSTED,Sentinel,Infrastructure,10,VirtualBox Service
-52:54:00:12:35:04,10.0.2.4,VirtualBox DHCP,2026-07-21 19:12:41,2026-07-22 03:06:13,5,TRUSTED,Sentinel,Infrastructure,10,VirtualBox Service
