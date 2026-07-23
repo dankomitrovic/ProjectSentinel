@@ -13,6 +13,8 @@ Load previous state
     ↓
 Scan network
     ↓
+Enrich discovered devices
+    ↓
 Load trusted and pending inventories
     ↓
 Classify visible devices
@@ -29,6 +31,8 @@ Save current state and history
 """
 
 from detection import compare_scans
+
+from device_intelligence import enrich_devices
 
 from inventory import (
     classify_devices,
@@ -83,7 +87,10 @@ def main():
     previous_devices = load_latest_scan()
 
     # Discover devices currently visible on the network.
-    current_devices = discover_devices()
+    discovered_devices = discover_devices()
+
+    # Add device-intelligence information such as MAC vendor.
+    current_devices = enrich_devices(discovered_devices)
 
     # Load approved and pending device inventories.
     trusted_devices = load_trusted_devices()
@@ -132,7 +139,7 @@ def main():
     display_changes(new_devices, missing_devices)
     display_pending_result(added_count)
 
-    # Save the current state only after all comparisons are complete.
+    # Save the enriched current state only after comparisons are complete.
     save_latest_scan(current_devices)
     save_scan_history(current_devices)
 

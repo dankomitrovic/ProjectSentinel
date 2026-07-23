@@ -46,6 +46,7 @@ def display_devices(classified_devices):
         print(f"Name       : {device['friendly_name']}")
         print(f"IP Address : {device['ip_address']}")
         print(f"MAC Address: {device['mac_address']}")
+        print(f"Vendor     : {device.get('vendor', 'Unknown')}")
         print(f"Status     : {device['status']}")
 
         if device["status"] == "TRUSTED":
@@ -84,12 +85,14 @@ def display_changes(new_devices, missing_devices):
         print("NEWLY VISIBLE DEVICE")
         print(f"IP Address : {device['ip_address']}")
         print(f"MAC Address: {device['mac_address']}")
+        print(f"Vendor     : {device.get('vendor', 'Unknown')}")
 
     for device in missing_devices:
         print()
         print("DEVICE NO LONGER VISIBLE")
         print(f"Previous IP: {device['ip_address']}")
         print(f"MAC Address: {device['mac_address']}")
+        print(f"Vendor     : {device.get('vendor', 'Unknown')}")
 
 
 def display_pending_result(added_count):
@@ -172,7 +175,6 @@ def display_security_summary(
     pending_count = 0
     unknown_count = 0
 
-    # Count visible devices by their current inventory status.
     for device in classified_devices:
         if device["status"] == "TRUSTED":
             trusted_count += 1
@@ -185,7 +187,6 @@ def display_security_summary(
 
     highest_device_risk = 0
 
-    # Find the highest current risk score among visible devices.
     for device in classified_devices:
         mac_address = device["mac_address"]
 

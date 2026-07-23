@@ -12,6 +12,12 @@ TARGET_NETWORK = "10.0.2.0/24"
 # Number of seconds Sentinel waits for ARP replies.
 SCAN_TIMEOUT = 2
 
+# Device-intelligence features.
+ENABLE_VENDOR_LOOKUP = True
+
+# Text used when a MAC vendor cannot be identified.
+UNKNOWN_VENDOR_NAME = "Unknown"
+
 # Data file locations.
 LATEST_SCAN_FILE = "data/latest_devices.csv"
 SCAN_HISTORY_FILE = "data/scan_history.csv"
