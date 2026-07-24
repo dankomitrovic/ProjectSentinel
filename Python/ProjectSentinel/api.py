@@ -13,6 +13,7 @@ from flask import (
 )
 
 from config import LATEST_SNAPSHOT_FILE
+from events import get_device_events, get_recent_events, record_event
 from inventory import approve_device as approve_inventory_device
 from main import main as run_monitoring_cycle
 
@@ -269,6 +270,18 @@ def execute_background_scan():
         )
 
     except PermissionError:
+        record_event(
+            event_type="SCAN_FAILED",
+            severity="HIGH",
+            message=(
+                "Network scan failed because raw socket permission "
+                "was denied."
+            ),
+            metadata={
+                "error": "Raw socket permission denied."
+            }
+        )
+
         update_scan_state(
             status="failed",
             message=(
@@ -282,6 +295,15 @@ def execute_background_scan():
         )
 
     except Exception as error:
+        record_event(
+            event_type="SCAN_FAILED",
+            severity="HIGH",
+            message="The Sentinel network scan failed.",
+            metadata={
+                "error": str(error)
+            }
+        )
+
         app.logger.exception(
             "Sentinel background scan failed"
         )
@@ -383,7 +405,8 @@ def device_page(mac_address):
                 }
             },
             approval_message=None,
-            approval_error=error
+            approval_error=error,
+            device_events=[]
         ), 503
 
     requested_mac = normalise_mac_address(
@@ -406,7 +429,8 @@ def device_page(mac_address):
                 "device.html",
                 device=device_record,
                 approval_message=approval_message,
-                approval_error=approval_error
+                approval_error=approval_error,
+                device_events=get_device_events(requested_mac)
             )
 
     return jsonify(
@@ -578,7 +602,9 @@ def api_information():
                 "approve_device": (
                     "POST /devices/<mac_address>/approve"
                 ),
-                "device_api": "/device/<mac_address>"
+                "device_api": "/device/<mac_address>",
+                "events": "/events",
+                "device_events": "/device/<mac_address>/events"
             }
         }
     )
@@ -783,6 +809,48 @@ def device(mac_address):
             )
         }
     ), 404
+
+
+@app.route("/events")
+def events():
+    """Return recent Sentinel events."""
+
+    requested_limit = request.args.get("limit", "50")
+
+    try:
+        limit = min(max(int(requested_limit), 1), 500)
+    except ValueError:
+        limit = 50
+
+    event_list = get_recent_events(
+        limit=limit,
+        severity=request.args.get("severity"),
+        event_type=request.args.get("type")
+    )
+
+    return jsonify(
+        {
+            "application": "Project Sentinel",
+            "event_count": len(event_list),
+            "events": event_list
+        }
+    )
+
+
+@app.route("/device/<path:mac_address>/events")
+def device_events(mac_address):
+    """Return the event timeline for one device."""
+
+    event_list = get_device_events(mac_address)
+
+    return jsonify(
+        {
+            "application": "Project Sentinel",
+            "mac_address": normalise_mac_address(mac_address),
+            "event_count": len(event_list),
+            "events": event_list
+        }
+    )
 
 
 @app.errorhandler(404)

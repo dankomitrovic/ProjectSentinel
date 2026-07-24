@@ -11,6 +11,7 @@ import tempfile
 from datetime import datetime
 
 from config import PENDING_DEVICES_FILE, TRUSTED_DEVICES_FILE
+from events import record_event
 from logger import log_debug, log_info, log_warning
 
 
@@ -639,6 +640,30 @@ def approve_device(
         f"type={device_type}, "
         f"trust={trust_level}, "
         f"mac={requested_mac}"
+    )
+
+    record_event(
+        event_type=(
+            "DEVICE_APPROVED"
+            if not existing_record_found
+            else "DEVICE_PROFILE_UPDATED"
+        ),
+        severity="INFO",
+        message=(
+            "Device approved into the trusted inventory."
+            if not existing_record_found
+            else "Trusted device profile was updated."
+        ),
+        device={
+            "mac_address": requested_mac,
+            "friendly_name": friendly_name
+        },
+        metadata={
+            "owner": owner,
+            "device_type": device_type,
+            "trust_level": trust_level,
+            "notes": notes
+        }
     )
 
     return {
