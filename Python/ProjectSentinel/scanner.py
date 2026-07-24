@@ -9,8 +9,9 @@ or save files.
 
 from scapy.all import ARP, Ether, srp
 
-from config import SCAN_TIMEOUT, TARGET_NETWORK
+from config import FALLBACK_TARGET_NETWORK, SCAN_TIMEOUT
 from logger import log_debug, log_info, log_warning
+from network_detection import resolve_scan_network
 
 
 def discover_devices():
@@ -21,11 +22,15 @@ def discover_devices():
         A list of dictionaries containing IP and MAC addresses.
     """
 
+    target_network = resolve_scan_network(
+        FALLBACK_TARGET_NETWORK
+    )
+
     log_info("Starting ARP network discovery")
-    log_debug(f"Target network: {TARGET_NETWORK}")
+    log_debug(f"Target network: {target_network}")
     log_debug(f"Scan timeout: {SCAN_TIMEOUT} second(s)")
 
-    arp_request = ARP(pdst=TARGET_NETWORK)
+    arp_request = ARP(pdst=target_network)
 
     ethernet_broadcast = Ether(
         dst="ff:ff:ff:ff:ff:ff"

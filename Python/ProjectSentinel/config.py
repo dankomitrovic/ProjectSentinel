@@ -5,9 +5,8 @@ This module stores file locations and application settings.
 Keeping them here means paths and settings only need to be changed once.
 """
 
-# Network that Sentinel will scan.
-# The current VirtualBox NAT network uses the 10.0.2.0/24 subnet.
-TARGET_NETWORK = "10.0.2.0/24"
+# Fallback network used only when automatic detection fails.
+FALLBACK_TARGET_NETWORK = "10.0.2.0/24"
 
 # Number of seconds Sentinel waits for ARP replies.
 SCAN_TIMEOUT = 2
