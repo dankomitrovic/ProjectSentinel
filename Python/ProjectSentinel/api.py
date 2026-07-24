@@ -3,9 +3,17 @@ import os
 from datetime import datetime
 from threading import Lock, Thread
 
-from flask import Flask, jsonify, render_template
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for
+)
 
 from config import LATEST_SNAPSHOT_FILE
+from inventory import approve_device as approve_inventory_device
 from main import main as run_monitoring_cycle
 
 
@@ -13,6 +21,7 @@ app = Flask(__name__)
 
 scan_lock = Lock()
 scan_state_lock = Lock()
+snapshot_write_lock = Lock()
 
 scan_state = {
     "status": "idle",
@@ -32,6 +41,14 @@ def current_timestamp():
     return datetime.now().astimezone().isoformat(
         timespec="seconds"
     )
+
+
+def normalise_mac_address(mac_address):
+    """
+    Return a consistently formatted lowercase MAC address.
+    """
+
+    return str(mac_address).strip().lower()
 
 
 def load_snapshot():
@@ -54,6 +71,123 @@ def load_snapshot():
         return None, f"Unable to load snapshot: {error}"
 
     return snapshot, None
+
+
+def save_snapshot(snapshot):
+    """
+    Save the latest snapshot using a temporary file.
+    """
+
+    snapshot_directory = (
+        os.path.dirname(LATEST_SNAPSHOT_FILE)
+        or "."
+    )
+
+    os.makedirs(
+        snapshot_directory,
+        exist_ok=True
+    )
+
+    temporary_file = (
+        f"{LATEST_SNAPSHOT_FILE}.tmp"
+    )
+
+    with snapshot_write_lock:
+        with open(
+            temporary_file,
+            "w",
+            encoding="utf-8"
+        ) as snapshot_file:
+            json.dump(
+                snapshot,
+                snapshot_file,
+                indent=4
+            )
+
+        os.replace(
+            temporary_file,
+            LATEST_SNAPSHOT_FILE
+        )
+
+
+def update_snapshot_device_inventory(
+    mac_address,
+    trusted_profile
+):
+    """
+    Update a device in the latest snapshot after approval.
+
+    This allows the page to show TRUSTED immediately without
+    requiring another network scan.
+    """
+
+    snapshot, error = load_snapshot()
+
+    if error:
+        return False
+
+    requested_mac = normalise_mac_address(
+        mac_address
+    )
+
+    device_updated = False
+
+    for device_record in snapshot.get(
+        "devices",
+        []
+    ):
+        device_mac = normalise_mac_address(
+            device_record.get(
+                "mac_address",
+                ""
+            )
+        )
+
+        if device_mac == requested_mac:
+            device_record["status"] = "TRUSTED"
+            device_record["friendly_name"] = trusted_profile[
+                "friendly_name"
+            ]
+            device_record["owner"] = trusted_profile[
+                "owner"
+            ]
+            device_record["device_type"] = trusted_profile[
+                "device_type"
+            ]
+            device_record["trust_level"] = trusted_profile[
+                "trust_level"
+            ]
+            device_record["notes"] = trusted_profile[
+                "notes"
+            ]
+
+            device_updated = True
+            break
+
+    if not device_updated:
+        return False
+
+    summary = snapshot.get(
+        "summary"
+    )
+
+    if isinstance(summary, dict):
+        trusted_count = 0
+
+        for device_record in snapshot.get(
+            "devices",
+            []
+        ):
+            if device_record.get("status") == "TRUSTED":
+                trusted_count += 1
+
+        summary["trusted_devices"] = trusted_count
+
+    save_snapshot(
+        snapshot
+    )
+
+    return True
 
 
 def snapshot_error_response(error_message):
@@ -121,7 +255,10 @@ def execute_background_scan():
 
             return
 
-        device_list = snapshot.get("devices", [])
+        device_list = snapshot.get(
+            "devices",
+            []
+        )
 
         update_scan_state(
             status="completed",
@@ -184,9 +321,17 @@ def dashboard():
 
     return render_template(
         "dashboard.html",
-        summary=snapshot.get("summary", {}),
-        devices=snapshot.get("devices", []),
-        generated_at=snapshot.get("generated_at")
+        summary=snapshot.get(
+            "summary",
+            {}
+        ),
+        devices=snapshot.get(
+            "devices",
+            []
+        ),
+        generated_at=snapshot.get(
+            "generated_at"
+        )
     )
 
 
@@ -198,6 +343,16 @@ def device_page(mac_address):
 
     snapshot, error = load_snapshot()
 
+    approval_message = None
+    approval_error = request.args.get(
+        "approval_error"
+    )
+
+    if request.args.get("approved") == "1":
+        approval_message = (
+            "Device approved and added to the trusted inventory."
+        )
+
     if error:
         return render_template(
             "device.html",
@@ -205,7 +360,18 @@ def device_page(mac_address):
                 "friendly_name": "Device unavailable",
                 "ip_address": "Unknown",
                 "mac_address": mac_address,
+                "hostname": "Unknown",
+                "vendor": "Unknown",
+                "device_type": "",
+                "detected_device_type": "Unknown",
+                "detection_confidence": "Low",
+                "detection_reason": "Not available",
+                "owner": "",
+                "notes": "",
+                "trust_level": "",
+                "status": "UNKNOWN",
                 "risk_score": 0,
+                "risk_reasons": "Snapshot unavailable.",
                 "open_ports": [],
                 "behaviour_analysis": {
                     "behaviour_status": "UNAVAILABLE",
@@ -215,20 +381,32 @@ def device_page(mac_address):
                     "new_services": [],
                     "missing_services": []
                 }
-            }
+            },
+            approval_message=None,
+            approval_error=error
         ), 503
 
-    requested_mac = mac_address.upper()
+    requested_mac = normalise_mac_address(
+        mac_address
+    )
 
-    for device_record in snapshot.get("devices", []):
-        device_mac = str(
-            device_record.get("mac_address", "")
-        ).upper()
+    for device_record in snapshot.get(
+        "devices",
+        []
+    ):
+        device_mac = normalise_mac_address(
+            device_record.get(
+                "mac_address",
+                ""
+            )
+        )
 
         if device_mac == requested_mac:
             return render_template(
                 "device.html",
-                device=device_record
+                device=device_record,
+                approval_message=approval_message,
+                approval_error=approval_error
             )
 
     return jsonify(
@@ -241,6 +419,141 @@ def device_page(mac_address):
             )
         }
     ), 404
+
+
+@app.route(
+    "/devices/<path:mac_address>/approve",
+    methods=["POST"]
+)
+def approve_device_route(mac_address):
+    """
+    Approve a device and move it into the trusted inventory.
+    """
+
+    snapshot, snapshot_error = load_snapshot()
+
+    if snapshot_error:
+        return redirect(
+            url_for(
+                "device_page",
+                mac_address=mac_address,
+                approval_error=snapshot_error
+            )
+        )
+
+    requested_mac = normalise_mac_address(
+        mac_address
+    )
+
+    matching_device = None
+
+    for device_record in snapshot.get(
+        "devices",
+        []
+    ):
+        device_mac = normalise_mac_address(
+            device_record.get(
+                "mac_address",
+                ""
+            )
+        )
+
+        if device_mac == requested_mac:
+            matching_device = device_record
+            break
+
+    if matching_device is None:
+        return jsonify(
+            {
+                "application": "Project Sentinel",
+                "status": "not found",
+                "message": (
+                    f"No device was found with MAC address "
+                    f"{mac_address}"
+                )
+            }
+        ), 404
+
+    friendly_name = request.form.get(
+        "friendly_name",
+        ""
+    ).strip()
+
+    owner = request.form.get(
+        "owner",
+        ""
+    ).strip()
+
+    device_type = request.form.get(
+        "device_type",
+        ""
+    ).strip()
+
+    trust_level = request.form.get(
+        "trust_level",
+        "Trusted"
+    ).strip()
+
+    notes = request.form.get(
+        "notes",
+        ""
+    ).strip()
+
+    if not device_type:
+        detected_type = matching_device.get(
+            "detected_device_type",
+            ""
+        )
+
+        if detected_type != "Unknown":
+            device_type = detected_type
+
+    try:
+        trusted_profile = approve_inventory_device(
+            mac_address=requested_mac,
+            friendly_name=friendly_name,
+            owner=owner,
+            device_type=device_type,
+            trust_level=trust_level,
+            notes=notes
+        )
+
+    except ValueError as error:
+        return redirect(
+            url_for(
+                "device_page",
+                mac_address=requested_mac,
+                approval_error=str(error)
+            )
+        )
+
+    except OSError as error:
+        app.logger.exception(
+            "Unable to update device inventory"
+        )
+
+        return redirect(
+            url_for(
+                "device_page",
+                mac_address=requested_mac,
+                approval_error=(
+                    f"Unable to update inventory: {error}"
+                )
+            )
+        )
+
+    update_snapshot_device_inventory(
+        requested_mac,
+        trusted_profile
+    )
+
+    return redirect(
+        url_for(
+            "device_page",
+            mac_address=requested_mac,
+            approved="1"
+        )
+    )
 
 
 @app.route("/api")
@@ -262,6 +575,9 @@ def api_information():
                 "summary": "/summary",
                 "devices": "/devices",
                 "device_page": "/devices/<mac_address>",
+                "approve_device": (
+                    "POST /devices/<mac_address>/approve"
+                ),
                 "device_api": "/device/<mac_address>"
             }
         }
@@ -311,9 +627,7 @@ def start_scan():
         {
             "application": "Project Sentinel",
             "status": "accepted",
-            "message": (
-                "Sentinel network scan started."
-            ),
+            "message": "Sentinel network scan started.",
             "scan": get_scan_state()
         }
     ), 202
@@ -375,12 +689,19 @@ def summary():
     snapshot, error = load_snapshot()
 
     if error:
-        return snapshot_error_response(error)
+        return snapshot_error_response(
+            error
+        )
 
     return jsonify(
         {
-            "generated_at": snapshot.get("generated_at"),
-            "summary": snapshot.get("summary", {})
+            "generated_at": snapshot.get(
+                "generated_at"
+            ),
+            "summary": snapshot.get(
+                "summary",
+                {}
+            )
         }
     )
 
@@ -394,13 +715,20 @@ def devices():
     snapshot, error = load_snapshot()
 
     if error:
-        return snapshot_error_response(error)
+        return snapshot_error_response(
+            error
+        )
 
-    device_list = snapshot.get("devices", [])
+    device_list = snapshot.get(
+        "devices",
+        []
+    )
 
     return jsonify(
         {
-            "generated_at": snapshot.get("generated_at"),
+            "generated_at": snapshot.get(
+                "generated_at"
+            ),
             "device_count": len(device_list),
             "devices": device_list
         }
@@ -416,14 +744,24 @@ def device(mac_address):
     snapshot, error = load_snapshot()
 
     if error:
-        return snapshot_error_response(error)
+        return snapshot_error_response(
+            error
+        )
 
-    requested_mac = mac_address.upper()
+    requested_mac = normalise_mac_address(
+        mac_address
+    )
 
-    for device_record in snapshot.get("devices", []):
-        device_mac = str(
-            device_record.get("mac_address", "")
-        ).upper()
+    for device_record in snapshot.get(
+        "devices",
+        []
+    ):
+        device_mac = normalise_mac_address(
+            device_record.get(
+                "mac_address",
+                ""
+            )
+        )
 
         if device_mac == requested_mac:
             return jsonify(
