@@ -33,10 +33,14 @@ Detect network changes
     ↓
 Display security findings
     ↓
+Save structured JSON snapshot
+    ↓
 Save current state and history
 """
 
 from behaviour_analyzer import analyse_device_behaviours
+
+from config import LATEST_SNAPSHOT_FILE
 
 from detection import compare_scans
 
@@ -67,6 +71,8 @@ from reporting import (
 
 from scanner import discover_devices
 from service_scanner import scan_devices
+
+from snapshot import save_snapshot
 
 from storage import (
     ensure_data_files,
@@ -100,10 +106,14 @@ def main():
 
     # Add device-intelligence information such as vendor,
     # hostname and basic device-type fingerprinting.
-    enriched_devices = enrich_devices(discovered_devices)
+    enriched_devices = enrich_devices(
+        discovered_devices
+    )
 
     # Discover and validate selected TCP services on each local device.
-    current_devices = scan_devices(enriched_devices)
+    current_devices = scan_devices(
+        enriched_devices
+    )
 
     # Load approved and pending device inventories.
     trusted_devices = load_trusted_devices()
@@ -146,7 +156,9 @@ def main():
         device_registry
     )
 
-    save_device_registry(updated_registry)
+    save_device_registry(
+        updated_registry
+    )
 
     # Compare previous and current network-presence states.
     new_devices, missing_devices = compare_scans(
@@ -163,15 +175,41 @@ def main():
     )
 
     # Present detailed findings after the summary.
-    display_devices(analysed_devices)
-    display_changes(new_devices, missing_devices)
-    display_pending_result(added_count)
+    display_devices(
+        analysed_devices
+    )
+
+    display_changes(
+        new_devices,
+        missing_devices
+    )
+
+    display_pending_result(
+        added_count
+    )
+
+    # Save a complete structured snapshot for the REST API,
+    # dashboard, reports and future integrations.
+    save_snapshot(
+        analysed_devices,
+        updated_registry,
+        new_devices,
+        missing_devices,
+        LATEST_SNAPSHOT_FILE
+    )
 
     # Save the enriched current state only after comparisons are complete.
-    save_latest_scan(current_devices)
-    save_scan_history(current_devices)
+    save_latest_scan(
+        current_devices
+    )
 
-    log_info("Sentinel monitoring cycle completed")
+    save_scan_history(
+        current_devices
+    )
+
+    log_info(
+        "Sentinel monitoring cycle completed"
+    )
 
     print()
     print("=" * 60)

@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{{ device.friendly_name }} | Project Sentinel</title>
+
+    <style>
+        :root {
+            --background: #0f172a;
+            --panel: #111827;
+            --panel-light: #1f2937;
+            --border: #334155;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 30%),
+                var(--background);
+            color: var(--text);
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        header {
+            padding: 26px 5%;
+            border-bottom: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.94);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 28px;
+        }
+
+        .brand p {
+            margin: 7px 0 0;
+            color: var(--muted);
+        }
+
+        .back-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1400px;
+            margin: 30px auto 60px;
+        }
+
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 25px;
+            background: linear-gradient(145deg, var(--panel), var(--panel-light));
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 26px;
+            box-shadow: 0 16px 35px rgba(0, 0, 0, 0.2);
+        }
+
+        .device-title h2 {
+            margin: 0;
+            font-size: 30px;
+        }
+
+        .device-title p {
+            margin: 8px 0 0;
+            color: var(--muted);
+        }
+
+        .risk-score {
+            text-align: center;
+            min-width: 140px;
+            padding: 18px;
+            border-radius: 14px;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+
+        .risk-score-label {
+            color: var(--muted);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .risk-score-value {
+            margin-top: 7px;
+            font-size: 38px;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 22px;
+            margin-top: 24px;
+        }
+
+        .panel {
+            background: rgba(17, 24, 39, 0.96);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 16px 35px rgba(0, 0, 0, 0.18);
+        }
+
+        .panel-header {
+            padding: 18px 22px;
+            background: #1e293b;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .panel-content {
+            padding: 22px;
+        }
+
+        .detail-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 20px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .detail-value {
+            word-break: break-word;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 11px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-trusted {
+            color: #bbf7d0;
+            background: rgba(34, 197, 94, 0.14);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .status-pending {
+            color: #fde68a;
+            background: rgba(245, 158, 11, 0.14);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .status-unknown {
+            color: #fecaca;
+            background: rgba(239, 68, 68, 0.14);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .service {
+            padding: 16px;
+            margin-bottom: 12px;
+            border-radius: 12px;
+            background: #0b1220;
+            border: 1px solid var(--border);
+        }
+
+        .service:last-child {
+            margin-bottom: 0;
+        }
+
+        .service-title {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            font-weight: bold;
+        }
+
+        .service-details {
+            margin-top: 9px;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .behaviour-status {
+            font-size: 26px;
+            font-weight: bold;
+            color: var(--success);
+        }
+
+        .risk-reasons {
+            line-height: 1.7;
+            color: #dbeafe;
+        }
+
+        .empty-state {
+            color: var(--muted);
+            padding: 10px 0;
+        }
+
+        footer {
+            text-align: center;
+            color: var(--muted);
+            padding-top: 26px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 850px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hero,
+            .header-content {
+                flex-direction: column;
+            }
+
+            .risk-score {
+                width: 100%;
+            }
+
+            .detail-row {
+                grid-template-columns: 1fr;
+                gap: 6px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <div class="header-content">
+        <div class="brand">
+            <h1>Project Sentinel</h1>
+            <p>Device intelligence and security analysis</p>
+        </div>
+
+        <a class="back-link" href="/">← Back to dashboard</a>
+    </div>
+</header>
+
+<main class="container">
+
+    <section class="hero">
+        <div class="device-title">
+            <h2>{{ device.friendly_name }}</h2>
+            <p>{{ device.ip_address }} · {{ device.mac_address }}</p>
+        </div>
+
+        <div class="risk-score">
+            <div class="risk-score-label">Risk score</div>
+            <div class="risk-score-value">{{ device.risk_score }}</div>
+        </div>
+    </section>
+
+    <div class="grid">
+
+        <section class="panel">
+            <div class="panel-header">
+                <h3>Device Information</h3>
+            </div>
+
+            <div class="panel-content">
+
+                <div class="detail-row">
+                    <div class="detail-label">IP address</div>
+                    <div class="detail-value">{{ device.ip_address }}</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">MAC address</div>
+                    <div class="detail-value">{{ device.mac_address }}</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Hostname</div>
+                    <div class="detail-value">{{ device.hostname }}</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Vendor</div>
+                    <div class="detail-value">{{ device.vendor }}</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Device type</div>
+                    <div class="detail-value">{{ device.device_type }}</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Detected type</div>
+                    <div class="detail-value">
+                        {{ device.detected_device_type }}
+                        — {{ device.detection_confidence }} confidence
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Detection reason</div>
+                    <div class="detail-value">{{ device.detection_reason }}</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Owner</div>
+                    <div class="detail-value">{{ device.owner }}</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Notes</div>
+                    <div class="detail-value">{{ device.notes }}</div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Inventory status</div>
+                    <div class="detail-value">
+                        <span class="status-badge
+                            {% if device.status == 'TRUSTED' %}
+                                status-trusted
+                            {% elif device.status == 'PENDING' %}
+                                status-pending
+                            {% else %}
+                                status-unknown
+                            {% endif %}
+                        ">
+                            {{ device.status }}
+                        </span>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h3>Behaviour Analysis</h3>
+            </div>
+
+            <div class="panel-content">
+                <div class="behaviour-status">
+                    {{ device.behaviour_analysis.behaviour_status }}
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Current services</div>
+                    <div class="detail-value">
+                        {{ device.behaviour_analysis.current_service_count }}
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Baseline services</div>
+                    <div class="detail-value">
+                        {{ device.behaviour_analysis.baseline_service_count }}
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Changes detected</div>
+                    <div class="detail-value">
+                        {{ device.behaviour_analysis.change_count }}
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">New services</div>
+                    <div class="detail-value">
+                        {{ device.behaviour_analysis.new_services | length }}
+                    </div>
+                </div>
+
+                <div class="detail-row">
+                    <div class="detail-label">Missing services</div>
+                    <div class="detail-value">
+                        {{ device.behaviour_analysis.missing_services | length }}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h3>Detected Services</h3>
+            </div>
+
+            <div class="panel-content">
+
+                {% if device.open_ports %}
+
+                    {% for service in device.open_ports %}
+
+                    <div class="service">
+                        <div class="service-title">
+                            <span>
+                                {{ service.service }}
+                                · Port {{ service.port }}/{{ service.protocol }}
+                            </span>
+
+                            <span>{{ service.status }}</span>
+                        </div>
+
+                        <div class="service-details">
+                            Confidence: {{ service.confidence }}<br>
+                            Response time: {{ service.response_time_ms }} ms<br>
+                            Successful attempts:
+                            {{ service.successful_attempts }}/{{ service.total_attempts }}<br>
+                            {{ service.validation_reason }}
+                        </div>
+                    </div>
+
+                    {% endfor %}
+
+                {% else %}
+
+                    <div class="empty-state">
+                        No services were detected for this device.
+                    </div>
+
+                {% endif %}
+
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h3>Risk Explanation</h3>
+            </div>
+
+            <div class="panel-content">
+                <div class="risk-reasons">
+                    {{ device.risk_reasons }}
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <footer>
+        Project Sentinel · Device security intelligence
+    </footer>
+
+</main>
+
+</body>
+</html>
