@@ -1,0 +1,28 @@
+<section class="section">
+    <div class="section-header">
+        <div>
+            <h2>Network Devices</h2>
+            <p>Discovered assets from the latest monitoring cycle.</p>
+        </div>
+        <input id="deviceSearch" class="search-box" type="search" placeholder="Search IP, hostname, device or status" autocomplete="off">
+    </div>
+
+    <div class="table-wrapper">
+        <table id="deviceTable">
+            <thead><tr><th>Device</th><th>IP Address</th><th>Hostname</th><th>Type</th><th>Status</th><th>Risk</th></tr></thead>
+            <tbody>
+                {% for device in devices %}
+                <tr class="device-row" data-device-url="{{ url_for('device_page', mac_address=device.mac_address) }}" tabindex="0" role="link" aria-label="Open details for {{ device.friendly_name }}">
+                    <td><div class="device-name">{{ device.friendly_name }}</div><div class="muted">{{ device.mac_address }}</div></td>
+                    <td>{{ device.ip_address }}</td>
+                    <td>{{ device.hostname }}</td>
+                    <td>{{ device.device_type or device.detected_device_type or 'Unknown' }}</td>
+                    <td><span class="status-badge {% if device.status == 'TRUSTED' %}status-trusted{% elif device.status == 'PENDING' %}status-pending{% else %}status-unknown{% endif %}">{{ device.status }}</span></td>
+                    <td><span class="risk-badge">{{ device.risk_score }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if not devices %}<div class="empty-state">No device data is currently available.</div>{% endif %}
+    </div>
+</section>

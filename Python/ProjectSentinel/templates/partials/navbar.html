@@ -1,0 +1,23 @@
+<header class="site-header">
+    <div class="header-content">
+        <a class="brand" href="{{ url_for('dashboard') }}" aria-label="Project Sentinel dashboard">
+            <span class="brand-mark">S</span>
+            <span>
+                <strong>Project Sentinel</strong>
+                <small>{% block nav_subtitle %}Network security monitoring and risk intelligence{% endblock %}</small>
+            </span>
+        </a>
+
+        <nav class="main-navigation" aria-label="Primary navigation">
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('devices') }}">Devices API</a>
+            <a href="{{ url_for('events') }}">Events API</a>
+            <a href="{{ url_for('api_information') }}">API</a>
+        </nav>
+
+        <div class="live-indicator">
+            <span class="live-dot" aria-hidden="true"></span>
+            Sentinel API online
+        </div>
+    </div>
+</header>

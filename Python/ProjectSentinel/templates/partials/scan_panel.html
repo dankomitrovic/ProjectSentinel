@@ -1,0 +1,20 @@
+<section class="scan-panel">
+    <div class="scan-information">
+        <h1 class="scan-title">Network Monitoring</h1>
+        <p id="scanMessage" class="scan-message">Sentinel is ready to scan the active network.</p>
+
+        <div class="scan-details">
+            <span><strong>Last snapshot:</strong> <span id="lastScanTime">{% if generated_at %}{{ generated_at }}{% else %}Not available{% endif %}</span></span>
+            <span><strong>Visible devices:</strong> <span id="visibleDeviceCount">{{ summary.devices_visible }}</span></span>
+        </div>
+
+        <div id="progressTrack" class="progress-track" aria-hidden="true">
+            <div class="progress-bar"></div>
+        </div>
+    </div>
+
+    <div class="scan-controls">
+        <span id="scanStatusBadge" class="scan-status-badge scan-idle">Idle</span>
+        <button id="scanButton" class="scan-button" type="button">Run Network Scan</button>
+    </div>
+</section>

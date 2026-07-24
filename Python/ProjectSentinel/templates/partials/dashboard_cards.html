@@ -1,0 +1,9 @@
+<section class="cards" aria-label="Security summary">
+    <article class="card">
+        <div class="card-label">Overall Risk</div>
+        <div class="card-value {% if summary.overall_risk == 'LOW' %}risk-low{% elif summary.overall_risk == 'MEDIUM' %}risk-medium{% else %}risk-high{% endif %}">{{ summary.overall_risk }}</div>
+    </article>
+    <article class="card"><div class="card-label">Devices Visible</div><div class="card-value">{{ summary.devices_visible }}</div></article>
+    <article class="card"><div class="card-label">Trusted Devices</div><div class="card-value">{{ summary.trusted_devices }}</div></article>
+    <article class="card"><div class="card-label">Highest Risk Score</div><div class="card-value">{{ summary.highest_device_risk }}</div></article>
+</section>
