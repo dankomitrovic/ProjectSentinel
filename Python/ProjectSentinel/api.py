@@ -1,6 +1,7 @@
 import json
 import os
-from threading import Lock
+from datetime import datetime
+from threading import Lock, Thread
 
 from flask import Flask, jsonify, render_template
 
@@ -11,6 +12,26 @@ from main import main as run_monitoring_cycle
 app = Flask(__name__)
 
 scan_lock = Lock()
+scan_state_lock = Lock()
+
+scan_state = {
+    "status": "idle",
+    "message": "Sentinel is ready.",
+    "started_at": None,
+    "completed_at": None,
+    "device_count": None,
+    "error": None
+}
+
+
+def current_timestamp():
+    """
+    Return the current time in ISO 8601 format.
+    """
+
+    return datetime.now().astimezone().isoformat(
+        timespec="seconds"
+    )
 
 
 def load_snapshot():
@@ -37,7 +58,7 @@ def load_snapshot():
 
 def snapshot_error_response(error_message):
     """
-    Return a standard API response when snapshot data is unavailable.
+    Return a standard response when snapshot data is unavailable.
     """
 
     return jsonify(
@@ -47,6 +68,97 @@ def snapshot_error_response(error_message):
             "message": error_message
         }
     ), 503
+
+
+def get_scan_state():
+    """
+    Return a safe copy of the current scan state.
+    """
+
+    with scan_state_lock:
+        return dict(scan_state)
+
+
+def update_scan_state(**changes):
+    """
+    Update selected values in the current scan state.
+    """
+
+    with scan_state_lock:
+        scan_state.update(changes)
+
+
+def execute_background_scan():
+    """
+    Run one complete Sentinel cycle in a background thread.
+    """
+
+    try:
+        update_scan_state(
+            status="scanning",
+            message="Discovering and analysing network devices.",
+            started_at=current_timestamp(),
+            completed_at=None,
+            device_count=None,
+            error=None
+        )
+
+        run_monitoring_cycle()
+
+        snapshot, snapshot_error = load_snapshot()
+
+        if snapshot_error:
+            update_scan_state(
+                status="completed",
+                message=(
+                    "Scan completed, but the latest snapshot "
+                    "could not be loaded."
+                ),
+                completed_at=current_timestamp(),
+                device_count=None,
+                error=snapshot_error
+            )
+
+            return
+
+        device_list = snapshot.get("devices", [])
+
+        update_scan_state(
+            status="completed",
+            message="Network scan completed successfully.",
+            completed_at=current_timestamp(),
+            device_count=len(device_list),
+            error=None
+        )
+
+    except PermissionError:
+        update_scan_state(
+            status="failed",
+            message=(
+                "Sentinel does not have permission to create "
+                "the raw network socket required for ARP "
+                "discovery."
+            ),
+            completed_at=current_timestamp(),
+            device_count=None,
+            error="Raw socket permission denied."
+        )
+
+    except Exception as error:
+        app.logger.exception(
+            "Sentinel background scan failed"
+        )
+
+        update_scan_state(
+            status="failed",
+            message="The Sentinel network scan failed.",
+            completed_at=current_timestamp(),
+            device_count=None,
+            error=str(error)
+        )
+
+    finally:
+        scan_lock.release()
 
 
 @app.route("/")
@@ -66,13 +178,15 @@ def dashboard():
                 "trusted_devices": 0,
                 "highest_device_risk": 0
             },
-            devices=[]
+            devices=[],
+            generated_at=None
         )
 
     return render_template(
         "dashboard.html",
         summary=snapshot.get("summary", {}),
-        devices=snapshot.get("devices", [])
+        devices=snapshot.get("devices", []),
+        generated_at=snapshot.get("generated_at")
     )
 
 
@@ -132,7 +246,7 @@ def device_page(mac_address):
 @app.route("/api")
 def api_information():
     """
-    Return general information about the Sentinel REST API.
+    Return information about the Sentinel REST API.
     """
 
     return jsonify(
@@ -143,7 +257,8 @@ def api_information():
             "endpoints": {
                 "dashboard": "/",
                 "health": "/health",
-                "scan": "/scan",
+                "start_scan": "POST /scan",
+                "scan_status": "/scan/status",
                 "summary": "/summary",
                 "devices": "/devices",
                 "device_page": "/devices/<mac_address>",
@@ -154,14 +269,14 @@ def api_information():
 
 
 @app.route("/scan", methods=["POST"])
-def scan_network():
+def start_scan():
     """
-    Run one complete Sentinel monitoring cycle.
-
-    Only one scan may run at a time.
+    Start a Sentinel monitoring cycle in the background.
     """
 
-    lock_acquired = scan_lock.acquire(blocking=False)
+    lock_acquired = scan_lock.acquire(
+        blocking=False
+    )
 
     if not lock_acquired:
         return jsonify(
@@ -170,79 +285,62 @@ def scan_network():
                 "status": "busy",
                 "message": (
                     "A Sentinel network scan is already running."
-                )
+                ),
+                "scan": get_scan_state()
             }
         ), 409
 
-    try:
-        run_monitoring_cycle()
+    update_scan_state(
+        status="starting",
+        message="Preparing Sentinel network scan.",
+        started_at=current_timestamp(),
+        completed_at=None,
+        device_count=None,
+        error=None
+    )
 
-        snapshot, error = load_snapshot()
+    scan_thread = Thread(
+        target=execute_background_scan,
+        name="sentinel-network-scan",
+        daemon=True
+    )
 
-        if error:
-            return jsonify(
-                {
-                    "application": "Project Sentinel",
-                    "status": "success",
-                    "message": (
-                        "Network scan completed, but the new "
-                        "snapshot could not be loaded."
-                    ),
-                    "snapshot_error": error
-                }
-            ), 200
+    scan_thread.start()
 
-        device_list = snapshot.get("devices", [])
+    return jsonify(
+        {
+            "application": "Project Sentinel",
+            "status": "accepted",
+            "message": (
+                "Sentinel network scan started."
+            ),
+            "scan": get_scan_state()
+        }
+    ), 202
 
-        return jsonify(
-            {
-                "application": "Project Sentinel",
-                "status": "success",
-                "message": "Network scan completed successfully.",
-                "generated_at": snapshot.get("generated_at"),
-                "device_count": len(device_list),
-                "summary": snapshot.get("summary", {})
-            }
-        )
 
-    except PermissionError:
-        return jsonify(
-            {
-                "application": "Project Sentinel",
-                "status": "error",
-                "message": (
-                    "Sentinel does not have permission to create "
-                    "the raw network socket required for ARP "
-                    "discovery. Start the API with the required "
-                    "network privileges."
-                )
-            }
-        ), 500
+@app.route("/scan/status")
+def scan_status():
+    """
+    Return the current background scan status.
+    """
 
-    except Exception as error:
-        app.logger.exception(
-            "Sentinel network scan failed"
-        )
-
-        return jsonify(
-            {
-                "application": "Project Sentinel",
-                "status": "error",
-                "message": str(error)
-            }
-        ), 500
-
-    finally:
-        scan_lock.release()
+    return jsonify(
+        {
+            "application": "Project Sentinel",
+            "scan": get_scan_state()
+        }
+    )
 
 
 @app.route("/health")
 def health():
     """
-    Return API and snapshot availability information.
+    Return API, snapshot and scan availability information.
     """
 
     snapshot, error = load_snapshot()
+    current_scan = get_scan_state()
 
     if error:
         return jsonify(
@@ -251,7 +349,7 @@ def health():
                 "application": "Project Sentinel",
                 "snapshot_status": "unavailable",
                 "snapshot_generated_at": None,
-                "scan_in_progress": scan_lock.locked()
+                "scan_status": current_scan["status"]
             }
         ), 503
 
@@ -263,7 +361,7 @@ def health():
             "snapshot_generated_at": snapshot.get(
                 "generated_at"
             ),
-            "scan_in_progress": scan_lock.locked()
+            "scan_status": current_scan["status"]
         }
     )
 
@@ -290,7 +388,7 @@ def summary():
 @app.route("/devices")
 def devices():
     """
-    Return all devices from the latest Sentinel snapshot.
+    Return all devices in the latest Sentinel snapshot.
     """
 
     snapshot, error = load_snapshot()
