@@ -16,6 +16,7 @@ from config import LATEST_SNAPSHOT_FILE
 from events import get_device_events, get_recent_events, record_event
 from inventory import approve_device as approve_inventory_device
 from main import main as run_monitoring_cycle
+from registry import load_device_registry
 
 
 app = Flask(__name__)
@@ -147,6 +148,121 @@ def build_device_intelligence(device, device_events):
         ),
         "severity_counts": severity_counts
     }
+
+
+def build_asset_inventory(snapshot):
+    """Build a permanent asset inventory from the registry and latest scan."""
+
+    registry = load_device_registry()
+    visible_devices = {}
+
+    for device in snapshot.get("devices", []):
+        mac_address = normalise_mac_address(
+            device.get("mac_address", "")
+        )
+
+        if mac_address:
+            visible_devices[mac_address] = device
+
+    assets = []
+
+    for mac_address, registry_record in registry.items():
+        current_device = visible_devices.get(mac_address, {})
+        is_online = mac_address in visible_devices
+
+        friendly_name = registry_record.get(
+            "friendly_name",
+            ""
+        ).strip()
+
+        hostname = str(
+            current_device.get("hostname", "")
+        ).strip()
+
+        display_name = friendly_name
+
+        if not display_name or display_name.lower() in {
+            "unknown",
+            "unknown device"
+        }:
+            if hostname and hostname.lower() != "unknown":
+                display_name = hostname
+            else:
+                display_name = "Unknown Device"
+
+        device_type = registry_record.get(
+            "device_type",
+            ""
+        ).strip()
+
+        if not device_type or device_type.lower() == "unknown":
+            device_type = str(
+                current_device.get(
+                    "detected_device_type",
+                    "Unknown"
+                )
+            ).strip() or "Unknown"
+
+        status = str(
+            registry_record.get("status", "UNKNOWN")
+        ).upper()
+
+        assets.append({
+            "mac_address": mac_address,
+            "ip_address": (
+                current_device.get("ip_address")
+                or registry_record.get("current_ip")
+                or "Unknown"
+            ),
+            "display_name": display_name,
+            "friendly_name": friendly_name,
+            "hostname": hostname or "Unknown",
+            "vendor": str(
+                current_device.get("vendor", "Unknown")
+            ).strip() or "Unknown",
+            "device_type": device_type,
+            "detected_device_type": str(
+                current_device.get(
+                    "detected_device_type",
+                    "Unknown"
+                )
+            ).strip() or "Unknown",
+            "owner": registry_record.get("owner", ""),
+            "notes": registry_record.get("notes", ""),
+            "trust_status": status,
+            "risk_score": registry_record.get("risk_score", 0),
+            "first_seen": registry_record.get("first_seen", ""),
+            "last_seen": registry_record.get("last_seen", ""),
+            "times_seen": registry_record.get("times_seen", 0),
+            "online": is_online,
+            "network_status": "ONLINE" if is_online else "OFFLINE"
+        })
+
+    assets.sort(
+        key=lambda asset: (
+            not asset["online"],
+            asset["display_name"].lower(),
+            asset["ip_address"]
+        )
+    )
+
+    summary = {
+        "total_assets": len(assets),
+        "online_assets": sum(1 for asset in assets if asset["online"]),
+        "offline_assets": sum(1 for asset in assets if not asset["online"]),
+        "trusted_assets": sum(
+            1
+            for asset in assets
+            if asset["trust_status"] == "TRUSTED"
+        ),
+        "pending_assets": sum(
+            1
+            for asset in assets
+            if asset["trust_status"] == "PENDING"
+        )
+    }
+
+    return assets, summary
 
 
 def load_snapshot():
@@ -454,6 +570,38 @@ def dashboard():
     )
 
 
+@app.route("/assets")
+def assets_page():
+    """Display Sentinel's permanent asset inventory."""
+
+    snapshot, error = load_snapshot()
+
+    if error:
+        return render_template(
+            "assets.html",
+            assets=[],
+            asset_summary={
+                "total_assets": 0,
+                "online_assets": 0,
+                "offline_assets": 0,
+                "trusted_assets": 0,
+                "pending_assets": 0
+            },
+            generated_at=None,
+            asset_error=error
+        ), 503
+
+    assets, asset_summary = build_asset_inventory(snapshot)
+
+    return render_template(
+        "assets.html",
+        assets=assets,
+        asset_summary=asset_summary,
+        generated_at=snapshot.get("generated_at"),
+        asset_error=None
+    )
+
+
 @app.route("/devices/<path:mac_address>")
 def device_page(mac_address):
     """
@@ -708,6 +856,7 @@ def api_information():
             "status": "running",
             "endpoints": {
                 "dashboard": "/",
+                "assets_page": "/assets",
                 "health": "/health",
                 "start_scan": "POST /scan",
                 "scan_status": "/scan/status",

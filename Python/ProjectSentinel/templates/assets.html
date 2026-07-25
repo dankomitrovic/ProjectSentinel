@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block title %}Assets | Project Sentinel{% endblock %}
+{% block body_class %}assets-page{% endblock %}
+
+{% block content %}
+<section class="assets-hero">
+    <div>
+        <span class="eyebrow">Asset Foundation</span>
+        <h1>Asset Inventory</h1>
+        <p>
+            Review every device known to Sentinel, including devices that are
+            currently offline but remain part of the permanent registry.
+        </p>
+    </div>
+
+    <div class="assets-hero-status" aria-label="Inventory status">
+        <span class="live-dot" aria-hidden="true"></span>
+        <div>
+            <strong>{{ asset_summary.total_assets }}</strong>
+            <span>managed assets</span>
+        </div>
+    </div>
+</section>
+
+{% if asset_error %}
+<section class="assets-alert" role="alert">
+    <strong>Asset inventory unavailable</strong>
+    <span>{{ asset_error }}</span>
+</section>
+{% endif %}
+
+<section class="asset-summary-grid" aria-label="Asset summary">
+    <article class="asset-summary-card">
+        <span class="asset-summary-icon" aria-hidden="true">◆</span>
+        <div>
+            <span>Total Assets</span>
+            <strong>{{ asset_summary.total_assets }}</strong>
+        </div>
+    </article>
+
+    <article class="asset-summary-card asset-summary-online">
+        <span class="asset-summary-icon" aria-hidden="true">●</span>
+        <div>
+            <span>Online</span>
+            <strong>{{ asset_summary.online_assets }}</strong>
+        </div>
+    </article>
+
+    <article class="asset-summary-card asset-summary-offline">
+        <span class="asset-summary-icon" aria-hidden="true">○</span>
+        <div>
+            <span>Offline</span>
+            <strong>{{ asset_summary.offline_assets }}</strong>
+        </div>
+    </article>
+
+    <article class="asset-summary-card asset-summary-trusted">
+        <span class="asset-summary-icon" aria-hidden="true">✓</span>
+        <div>
+            <span>Trusted</span>
+            <strong>{{ asset_summary.trusted_assets }}</strong>
+        </div>
+    </article>
+
+    <article class="asset-summary-card asset-summary-pending">
+        <span class="asset-summary-icon" aria-hidden="true">!</span>
+        <div>
+            <span>Pending</span>
+            <strong>{{ asset_summary.pending_assets }}</strong>
+        </div>
+    </article>
+</section>
+
+<section class="panel assets-panel">
+    <div class="assets-toolbar">
+        <div class="assets-toolbar-heading">
+            <h2>Known Devices</h2>
+            <p>
+                {% if generated_at %}
+                    Latest network snapshot: <time data-local-time="{{ generated_at }}">{{ generated_at }}</time>
+                {% else %}
+                    No snapshot timestamp is available.
+                {% endif %}
+            </p>
+        </div>
+
+        <div class="assets-controls">
+            <label class="asset-search-control" for="asset-search">
+                <span aria-hidden="true">⌕</span>
+                <span class="sr-only">Search assets</span>
+                <input
+                    id="asset-search"
+                    type="search"
+                    placeholder="Search name, IP, MAC or vendor"
+                    autocomplete="off"
+                >
+            </label>
+
+            <label class="sr-only" for="asset-status-filter">Filter by network status</label>
+            <select id="asset-status-filter">
+                <option value="all">All network states</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+            </select>
+
+            <label class="sr-only" for="asset-trust-filter">Filter by trust status</label>
+            <select id="asset-trust-filter">
+                <option value="all">All trust states</option>
+                <option value="trusted">Trusted</option>
+                <option value="pending">Pending</option>
+                <option value="unknown">Unknown</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="asset-results-bar">
+        <span id="asset-results-count">{{ assets|length }} assets shown</span>
+        <button id="asset-clear-filters" class="asset-clear-button" type="button">
+            Clear filters
+        </button>
+    </div>
+
+    {% if assets %}
+    <div id="asset-grid" class="asset-grid">
+        {% for asset in assets %}
+            {% set type_text = (asset.device_type or asset.detected_device_type or 'unknown')|lower %}
+            {% set asset_icon = '◆' %}
+            {% if 'router' in type_text or 'infrastructure' in type_text or 'network' in type_text %}
+                {% set asset_icon = '◉' %}
+            {% elif 'phone' in type_text or 'mobile' in type_text %}
+                {% set asset_icon = '▯' %}
+            {% elif 'printer' in type_text %}
+                {% set asset_icon = '▤' %}
+            {% elif 'camera' in type_text %}
+                {% set asset_icon = '◍' %}
+            {% elif 'tv' in type_text or 'television' in type_text %}
+                {% set asset_icon = '▣' %}
+            {% elif 'game' in type_text or 'console' in type_text or 'xbox' in type_text or 'playstation' in type_text or 'nintendo' in type_text %}
+                {% set asset_icon = '✦' %}
+            {% elif 'iot' in type_text or 'sensor' in type_text or 'smart' in type_text %}
+                {% set asset_icon = '◇' %}
+            {% elif 'computer' in type_text or 'laptop' in type_text or 'workstation' in type_text or 'desktop' in type_text %}
+                {% set asset_icon = '▰' %}
+            {% endif %}
+
+            <article
+                class="asset-card"
+                data-search="{{ [asset.display_name, asset.hostname, asset.ip_address, asset.mac_address, asset.vendor, asset.device_type, asset.detected_device_type]|join(' ')|lower }}"
+                data-network-status="{{ asset.network_status|lower }}"
+                data-trust-status="{{ asset.trust_status|lower }}"
+            >
+                <div class="asset-card-topline">
+                    <span class="asset-device-icon" aria-hidden="true">{{ asset_icon }}</span>
+                    <div class="asset-card-title">
+                        <h3>{{ asset.display_name }}</h3>
+                        <span>{{ asset.device_type }}</span>
+                    </div>
+                    <span class="network-badge network-{{ asset.network_status|lower }}">
+                        <span aria-hidden="true">●</span>
+                        {{ asset.network_status|title }}
+                    </span>
+                </div>
+
+                <dl class="asset-details">
+                    <div>
+                        <dt>IP address</dt>
+                        <dd>{{ asset.ip_address }}</dd>
+                    </div>
+                    <div>
+                        <dt>MAC address</dt>
+                        <dd>{{ asset.mac_address }}</dd>
+                    </div>
+                    <div>
+                        <dt>Vendor</dt>
+                        <dd>{{ asset.vendor }}</dd>
+                    </div>
+                    <div>
+                        <dt>Hostname</dt>
+                        <dd>{{ asset.hostname }}</dd>
+                    </div>
+                </dl>
+
+                <div class="asset-card-footer">
+                    <div class="asset-card-badges">
+                        <span class="trust-badge trust-{{ asset.trust_status|lower }}">
+                            {% if asset.trust_status == 'TRUSTED' %}✓{% else %}!{% endif %}
+                            {{ asset.trust_status|title }}
+                        </span>
+
+                        <span class="risk-badge">
+                            Risk {{ asset.risk_score }}
+                        </span>
+                    </div>
+
+                    <a
+                        class="asset-details-link"
+                        href="{{ url_for('device_page', mac_address=asset.mac_address) }}"
+                    >
+                        View intelligence <span aria-hidden="true">→</span>
+                    </a>
+                </div>
+            </article>
+        {% endfor %}
+    </div>
+
+    <div id="asset-empty-filter" class="asset-empty-state" hidden>
+        <span aria-hidden="true">⌕</span>
+        <strong>No matching assets</strong>
+        <p>Change the search text or clear the selected filters.</p>
+    </div>
+    {% else %}
+    <div class="asset-empty-state">
+        <span aria-hidden="true">◇</span>
+        <strong>No assets are registered yet</strong>
+        <p>Run a Sentinel scan to discover and register network devices.</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/assets.js') }}" defer></script>
+{% endblock %}
