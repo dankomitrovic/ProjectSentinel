@@ -52,6 +52,103 @@ def normalise_mac_address(mac_address):
     return str(mac_address).strip().lower()
 
 
+
+
+def parse_event_timestamp(value):
+    """Return a datetime for an event timestamp when possible."""
+
+    try:
+        return datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def normalise_risk_reasons(value):
+    """Return risk reasons as a clean list for the device page."""
+
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    if isinstance(value, str):
+        normalised_value = value.replace(";", "\n")
+        return [
+            item.strip(" -•\t")
+            for item in normalised_value.splitlines()
+            if item.strip(" -•\t")
+        ]
+
+    if value:
+        return [str(value)]
+
+    return []
+
+
+def build_device_intelligence(device, device_events):
+    """Build presentation-ready intelligence from snapshot and events."""
+
+    chronological_events = sorted(
+        device_events,
+        key=lambda event: event.get("timestamp", "")
+    )
+
+    timestamps = [
+        parse_event_timestamp(event.get("timestamp"))
+        for event in chronological_events
+    ]
+    timestamps = [value for value in timestamps if value is not None]
+
+    first_seen = timestamps[0].isoformat(timespec="seconds") if timestamps else None
+    last_seen = timestamps[-1].isoformat(timespec="seconds") if timestamps else None
+
+    sighting_types = {
+        "DEVICE_DISCOVERED",
+        "DEVICE_RETURNED",
+        "DEVICE_SEEN",
+        "DEVICE_ONLINE"
+    }
+    sightings = sum(
+        1
+        for event in chronological_events
+        if str(event.get("type", "")).upper() in sighting_types
+    )
+
+    if sightings == 0 and device_events:
+        sightings = 1
+
+    behaviour = device.get("behaviour_analysis", {}) or {}
+    current_services = device.get("open_ports", []) or []
+    new_services = behaviour.get("new_services", []) or []
+    missing_services = behaviour.get("missing_services", []) or []
+
+    severity_counts = {
+        "CRITICAL": 0,
+        "HIGH": 0,
+        "MEDIUM": 0,
+        "LOW": 0,
+        "INFO": 0
+    }
+
+    for event in device_events:
+        severity = str(event.get("severity", "INFO")).upper()
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+    return {
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+        "sightings": sightings,
+        "event_count": len(device_events),
+        "current_service_count": len(current_services),
+        "new_service_count": len(new_services),
+        "missing_service_count": len(missing_services),
+        "risk_reasons": normalise_risk_reasons(
+            device.get("risk_reasons", [])
+        ),
+        "severity_counts": severity_counts
+    }
+
+
 def load_snapshot():
     """
     Load Sentinel's latest saved snapshot.
@@ -406,7 +503,18 @@ def device_page(mac_address):
             },
             approval_message=None,
             approval_error=error,
-            device_events=[]
+            device_events=[],
+            device_intelligence={
+                "first_seen": None,
+                "last_seen": None,
+                "sightings": 0,
+                "event_count": 0,
+                "current_service_count": 0,
+                "new_service_count": 0,
+                "missing_service_count": 0,
+                "risk_reasons": ["Snapshot unavailable."],
+                "severity_counts": {}
+            }
         ), 503
 
     requested_mac = normalise_mac_address(
@@ -425,12 +533,19 @@ def device_page(mac_address):
         )
 
         if device_mac == requested_mac:
+            device_events = get_device_events(requested_mac)
+            device_intelligence = build_device_intelligence(
+                device_record,
+                device_events
+            )
+
             return render_template(
                 "device.html",
                 device=device_record,
                 approval_message=approval_message,
                 approval_error=approval_error,
-                device_events=get_device_events(requested_mac)
+                device_events=device_events,
+                device_intelligence=device_intelligence
             )
 
     return jsonify(

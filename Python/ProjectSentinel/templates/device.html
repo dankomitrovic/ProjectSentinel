@@ -2,471 +2,131 @@
 {% block title %}{{ device.friendly_name }} | Project Sentinel{% endblock %}
 {% block body_class %}device-page{% endblock %}
 {% block content %}
-<section class="hero">
-        <div class="device-title">
-            <h2>{{ device.friendly_name }}</h2>
-            <p>
-                {{ device.ip_address }}
-                ·
-                {{ device.mac_address }}
-            </p>
-        </div>
+<section class="device-hero">
+    <div>
+        <div class="eyebrow">Device Intelligence</div>
+        <h2>{{ device.friendly_name }}</h2>
+        <p>{{ device.ip_address }} · {{ device.mac_address }}</p>
+        <span class="status-badge {% if device.status == 'TRUSTED' %}status-trusted{% elif device.status == 'PENDING' %}status-pending{% else %}status-unknown{% endif %}">{{ device.status }}</span>
+    </div>
+    <div class="risk-orbit" data-risk="{{ device.risk_score|default(0) }}">
+        <strong>{{ device.risk_score|default(0) }}</strong>
+        <span>Risk score</span>
+    </div>
+</section>
 
-        <div class="risk-score">
-            <div class="risk-score-label">
-                Risk score
-            </div>
+{% if approval_message %}<div class="message message-success">{{ approval_message }}</div>{% endif %}
+{% if approval_error %}<div class="message message-error">{{ approval_error }}</div>{% endif %}
 
-            <div class="risk-score-value">
-                {{ device.risk_score }}
-            </div>
+<section class="intel-metrics">
+    <article><span>First seen</span><strong class="js-local-time" data-timestamp="{{ device_intelligence.first_seen or '' }}">{{ device_intelligence.first_seen or 'No event history' }}</strong></article>
+    <article><span>Last seen</span><strong class="js-local-time" data-timestamp="{{ device_intelligence.last_seen or '' }}">{{ device_intelligence.last_seen or 'No event history' }}</strong></article>
+    <article><span>Sightings</span><strong>{{ device_intelligence.sightings }}</strong></article>
+    <article><span>Timeline events</span><strong>{{ device_intelligence.event_count }}</strong></article>
+    <article><span>Open services</span><strong>{{ device_intelligence.current_service_count }}</strong></article>
+</section>
+
+<div class="device-intelligence-grid">
+    <section class="panel device-profile-panel">
+        <div class="panel-header"><h3>Device Profile</h3><p>Identity, ownership and network attributes.</p></div>
+        <div class="panel-content compact-details">
+            {% for label, value in [
+                ('IP address', device.ip_address),
+                ('MAC address', device.mac_address),
+                ('Hostname', device.hostname),
+                ('Vendor', device.vendor),
+                ('Assigned type', device.device_type or 'Not assigned'),
+                ('Detected type', device.detected_device_type),
+                ('Detection confidence', device.detection_confidence),
+                ('Owner', device.owner or 'Not assigned'),
+                ('Trust level', device.trust_level or 'Not assigned'),
+                ('Notes', device.notes or 'No notes recorded')
+            ] %}
+            <div class="detail-row"><div class="detail-label">{{ label }}</div><div class="detail-value">{{ value }}</div></div>
+            {% endfor %}
         </div>
     </section>
 
-    {% if approval_message %}
-        <div class="message message-success">
-            {{ approval_message }}
+    <section class="panel behaviour-panel">
+        <div class="panel-header"><h3>Behaviour Intelligence</h3><p>Current exposure compared with the established baseline.</p></div>
+        <div class="panel-content">
+            <div class="behaviour-summary">
+                <strong>{{ device.behaviour_analysis.behaviour_status }}</strong>
+                <span>{{ device.behaviour_analysis.change_count }} change(s) detected</span>
+            </div>
+            <div class="mini-metrics">
+                <div><span>Current</span><strong>{{ device.behaviour_analysis.current_service_count }}</strong></div>
+                <div><span>Baseline</span><strong>{{ device.behaviour_analysis.baseline_service_count }}</strong></div>
+                <div><span>New</span><strong>{{ device_intelligence.new_service_count }}</strong></div>
+                <div><span>Missing</span><strong>{{ device_intelligence.missing_service_count }}</strong></div>
+            </div>
+            {% if device.behaviour_analysis.new_services %}
+            <h4>New services</h4><div class="chip-list">{% for service in device.behaviour_analysis.new_services %}<span class="chip chip-warning">{{ service.service|default(service) }}{% if service.port is defined %} · {{ service.port }}{% endif %}</span>{% endfor %}</div>
+            {% endif %}
+            {% if device.behaviour_analysis.missing_services %}
+            <h4>Missing services</h4><div class="chip-list">{% for service in device.behaviour_analysis.missing_services %}<span class="chip">{{ service.service|default(service) }}{% if service.port is defined %} · {{ service.port }}{% endif %}</span>{% endfor %}</div>
+            {% endif %}
         </div>
-    {% endif %}
+    </section>
 
-    {% if approval_error %}
-        <div class="message message-error">
-            {{ approval_error }}
+    <section class="panel services-panel">
+        <div class="panel-header"><h3>Detected Services</h3><p>Validated services currently exposed by this device.</p></div>
+        <div class="panel-content">
+            {% if device.open_ports %}
+                {% for service in device.open_ports %}
+                <article class="service-card">
+                    <div><strong>{{ service.service }} · Port {{ service.port }}/{{ service.protocol }}</strong><span>{{ service.validation_reason }}</span></div>
+                    <span class="service-state">{{ service.status }}</span>
+                </article>
+                {% endfor %}
+            {% else %}<div class="empty-state">No services were detected for this device.</div>{% endif %}
         </div>
-    {% endif %}
+    </section>
 
-    <div class="grid">
+    <section class="panel risk-panel">
+        <div class="panel-header"><h3>Risk Explanation</h3><p>Why Sentinel assigned this device its current score.</p></div>
+        <div class="panel-content">
+            {% if device_intelligence.risk_reasons %}
+            <ol class="risk-reason-list">{% for reason in device_intelligence.risk_reasons %}<li><span>+</span>{{ reason }}</li>{% endfor %}</ol>
+            {% else %}<div class="empty-state">No active risk contributors were recorded.</div>{% endif %}
+        </div>
+    </section>
 
-        <section class="panel">
-            <div class="panel-header">
-                <h3>Device Information</h3>
+    <section class="panel timeline-panel">
+        <div class="panel-header timeline-heading"><div><h3>Device Timeline</h3><p>Security, behavioural and inventory history.</p></div><button id="timeline-toggle" class="secondary-button" type="button">Show all</button></div>
+        <div class="panel-content">
+            {% if device_events %}
+            <div class="timeline" id="device-timeline">
+                {% for event in device_events %}
+                <article class="timeline-event{% if loop.index > 6 %} timeline-extra{% endif %}">
+                    <div class="timeline-marker severity-{{ event.severity|lower }}"></div>
+                    <div class="timeline-body">
+                        <div class="timeline-meta"><span class="severity-pill severity-{{ event.severity|lower }}">{{ event.severity }}</span><time class="js-local-time" data-timestamp="{{ event.timestamp }}">{{ event.timestamp }}</time></div>
+                        <h4>{{ event.type|replace('_', ' ')|title }}</h4>
+                        <p>{{ event.message }}</p>
+                    </div>
+                </article>
+                {% endfor %}
             </div>
-
-            <div class="panel-content">
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        IP address
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.ip_address }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        MAC address
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.mac_address }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Hostname
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.hostname }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Vendor
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.vendor }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Device type
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.device_type or "Not assigned" }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Detected type
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.detected_device_type }}
-                        —
-                        {{ device.detection_confidence }}
-                        confidence
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Detection reason
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.detection_reason }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Owner
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.owner or "Not assigned" }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Trust level
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.trust_level or "Not assigned" }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Notes
-                    </div>
-
-                    <div class="detail-value">
-                        {{ device.notes or "No notes recorded" }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Inventory status
-                    </div>
-
-                    <div class="detail-value">
-                        <span class="status-badge
-                            {% if device.status == 'TRUSTED' %}
-                                status-trusted
-                            {% elif device.status == 'PENDING' %}
-                                status-pending
-                            {% else %}
-                                status-unknown
-                            {% endif %}
-                        ">
-                            {{ device.status }}
-                        </span>
-                    </div>
-                </div>
-
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel-header">
-                <h3>Asset Management</h3>
-
-                {% if device.status != "TRUSTED" %}
-                    <p>
-                        Review this device before adding it to the
-                        trusted inventory.
-                    </p>
-                {% else %}
-                    <p>
-                        This device is registered as a trusted asset.
-                    </p>
-                {% endif %}
-            </div>
-
-            <div class="panel-content">
-
-                {% if device.status != "TRUSTED" %}
-
-                    <form
-                        class="approval-form"
-                        method="post"
-                        action="{{ url_for(
-                            'approve_device_route',
-                            mac_address=device.mac_address
-                        ) }}"
-                    >
-
-                        <div class="form-group">
-                            <label for="friendly_name">
-                                Friendly name
-                            </label>
-
-                            <input
-                                id="friendly_name"
-                                name="friendly_name"
-                                type="text"
-                                maxlength="100"
-                                placeholder="Example: Living Room Television"
-                                required
-                            >
-
-                            <div class="form-help">
-                                Give the device a name that will be
-                                easy to recognise on the dashboard.
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="owner">
-                                Owner
-                            </label>
-
-                            <input
-                                id="owner"
-                                name="owner"
-                                type="text"
-                                maxlength="100"
-                                placeholder="Example: Danko"
-                                required
-                            >
-                        </div>
-
-                        <div class="form-group">
-                            <label for="device_type">
-                                Device type
-                            </label>
-
-                            <input
-                                id="device_type"
-                                name="device_type"
-                                type="text"
-                                maxlength="100"
-                                value="{% if device.detected_device_type != 'Unknown' %}{{ device.detected_device_type }}{% endif %}"
-                                placeholder="Example: Smart TV"
-                                required
-                            >
-                        </div>
-
-                        <div class="form-group">
-                            <label for="trust_level">
-                                Trust level
-                            </label>
-
-                            <select
-                                id="trust_level"
-                                name="trust_level"
-                                required
-                            >
-                                <option value="Trusted" selected>
-                                    Trusted
-                                </option>
-
-                                <option value="Restricted">
-                                    Restricted
-                                </option>
-
-                                <option value="Monitored">
-                                    Monitored
-                                </option>
-                            </select>
-
-                            <div class="form-help">
-                                Trusted is the normal choice for an
-                                approved household device.
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="notes">
-                                Notes
-                            </label>
-
-                            <textarea
-                                id="notes"
-                                name="notes"
-                                maxlength="500"
-                                placeholder="Optional information about the device"
-                            ></textarea>
-                        </div>
-
-                        <button
-                            class="approve-button"
-                            type="submit"
-                        >
-                            Approve Device
-                        </button>
-
-                    </form>
-
-                {% else %}
-
-                    <div class="trusted-confirmation">
-                        <strong>
-                            Trusted asset
-                        </strong>
-
-                        <br>
-
-                        This device is stored in
-                        <code>trusted_devices.csv</code> and will be
-                        recognised automatically during future scans.
-                    </div>
-
-                {% endif %}
-
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel-header">
-                <h3>Behaviour Analysis</h3>
-            </div>
-
-            <div class="panel-content">
-                <div class="behaviour-status">
-                    {{ device.behaviour_analysis.behaviour_status }}
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Current services
-                    </div>
-
-                    <div class="detail-value">
-                        {{
-                            device.behaviour_analysis
-                            .current_service_count
-                        }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Baseline services
-                    </div>
-
-                    <div class="detail-value">
-                        {{
-                            device.behaviour_analysis
-                            .baseline_service_count
-                        }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Changes detected
-                    </div>
-
-                    <div class="detail-value">
-                        {{
-                            device.behaviour_analysis
-                            .change_count
-                        }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        New services
-                    </div>
-
-                    <div class="detail-value">
-                        {{
-                            device.behaviour_analysis
-                            .new_services
-                            | length
-                        }}
-                    </div>
-                </div>
-
-                <div class="detail-row">
-                    <div class="detail-label">
-                        Missing services
-                    </div>
-
-                    <div class="detail-value">
-                        {{
-                            device.behaviour_analysis
-                            .missing_services
-                            | length
-                        }}
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel-header">
-                <h3>Detected Services</h3>
-            </div>
-
-            <div class="panel-content">
-
-                {% if device.open_ports %}
-
-                    {% for service in device.open_ports %}
-
-                        <div class="service">
-                            <div class="service-title">
-                                <span>
-                                    {{ service.service }}
-                                    ·
-                                    Port {{ service.port }}/{{ service.protocol }}
-                                </span>
-
-                                <span>
-                                    {{ service.status }}
-                                </span>
-                            </div>
-
-                            <div class="service-details">
-                                Confidence:
-                                {{ service.confidence }}
-                                <br>
-
-                                Response time:
-                                {{ service.response_time_ms }} ms
-                                <br>
-
-                                Successful attempts:
-                                {{ service.successful_attempts }}/{{ service.total_attempts }}
-                                <br>
-
-                                {{ service.validation_reason }}
-                            </div>
-                        </div>
-
-                    {% endfor %}
-
-                {% else %}
-
-                    <div class="empty-state">
-                        No services were detected for this device.
-                    </div>
-
-                {% endif %}
-
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel-header">
-                <h3>Risk Explanation</h3>
-            </div>
-
-            <div class="panel-content">
-                <div class="risk-reasons">
-                    {{ device.risk_reasons }}
-                </div>
-            </div>
-        </section>
-
-    </div>
-
-    
+            {% else %}<div class="empty-state">No events have been recorded for this device yet.</div>{% endif %}
+        </div>
+    </section>
+
+    <section class="panel asset-panel">
+        <div class="panel-header"><h3>Asset Management</h3><p>{% if device.status != 'TRUSTED' %}Review this device before adding it to the trusted inventory.{% else %}This device is registered as a trusted asset.{% endif %}</p></div>
+        <div class="panel-content">
+        {% if device.status != "TRUSTED" %}
+            <form class="approval-form" method="post" action="{{ url_for('approve_device_route', mac_address=device.mac_address) }}">
+                <div class="form-group"><label for="friendly_name">Friendly name</label><input id="friendly_name" name="friendly_name" type="text" maxlength="100" placeholder="Example: Living Room Television" required></div>
+                <div class="form-group"><label for="owner">Owner</label><input id="owner" name="owner" type="text" maxlength="100" placeholder="Example: Danko" required></div>
+                <div class="form-group"><label for="device_type">Device type</label><input id="device_type" name="device_type" type="text" maxlength="100" value="{% if device.detected_device_type != 'Unknown' %}{{ device.detected_device_type }}{% endif %}" placeholder="Example: Smart TV" required></div>
+                <div class="form-group"><label for="trust_level">Trust level</label><select id="trust_level" name="trust_level" required><option value="Trusted" selected>Trusted</option><option value="Restricted">Restricted</option><option value="Monitored">Monitored</option></select></div>
+                <div class="form-group"><label for="notes">Notes</label><textarea id="notes" name="notes" maxlength="500" placeholder="Optional information about the device"></textarea></div>
+                <button class="approve-button" type="submit">Approve Device</button>
+            </form>
+        {% else %}<div class="trusted-confirmation"><strong>Trusted asset</strong><br>This device is stored in <code>trusted_devices.csv</code> and will be recognised automatically during future scans.</div>{% endif %}
+        </div>
+    </section>
+</div>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/device.js') }}" defer></script>{% endblock %}
