@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Events Center | Project Sentinel{% endblock %}
+{% block body_class %}events-page{% endblock %}
+
+{% block content %}
+<section class="events-hero">
+    <div>
+        <p class="eyebrow">Security Operations</p>
+        <h1>Events Center</h1>
+        <p class="events-hero-copy">Review security, audit and monitoring activity across the Sentinel environment.</p>
+    </div>
+
+    <div class="events-live-panel" aria-live="polite">
+        <div class="events-live-heading">
+            <span class="live-dot" aria-hidden="true"></span>
+            <strong>Live event feed</strong>
+        </div>
+        <span id="eventsRefreshState">Refreshing every 15 seconds</span>
+        <small id="eventsLastUpdated">Waiting for first refresh</small>
+    </div>
+</section>
+
+<section class="event-summary-grid" aria-label="Event severity summary">
+    <article class="event-summary-card severity-critical-card">
+        <span class="summary-icon" aria-hidden="true">!</span>
+        <div><span>Critical</span><strong id="criticalCount">{{ severity_counts.CRITICAL }}</strong></div>
+    </article>
+    <article class="event-summary-card severity-high-card">
+        <span class="summary-icon" aria-hidden="true">↑</span>
+        <div><span>High</span><strong id="highCount">{{ severity_counts.HIGH }}</strong></div>
+    </article>
+    <article class="event-summary-card severity-medium-card">
+        <span class="summary-icon" aria-hidden="true">◆</span>
+        <div><span>Medium</span><strong id="mediumCount">{{ severity_counts.MEDIUM }}</strong></div>
+    </article>
+    <article class="event-summary-card severity-low-card">
+        <span class="summary-icon" aria-hidden="true">↓</span>
+        <div><span>Low</span><strong id="lowCount">{{ severity_counts.LOW }}</strong></div>
+    </article>
+    <article class="event-summary-card severity-info-card">
+        <span class="summary-icon" aria-hidden="true">i</span>
+        <div><span>Info</span><strong id="infoCount">{{ severity_counts.INFO }}</strong></div>
+    </article>
+</section>
+
+<section class="panel events-panel">
+    <div class="events-toolbar">
+        <div class="events-toolbar-heading">
+            <h2>Event Stream</h2>
+            <p><span id="visibleEventCount">{{ initial_events|length }}</span> events displayed</p>
+        </div>
+
+        <div class="events-controls">
+            <label class="event-search-control" for="eventSearch">
+                <span class="control-icon" aria-hidden="true">⌕</span>
+                <input id="eventSearch" type="search" placeholder="Search events, devices or addresses">
+            </label>
+
+            <label class="sr-only" for="severityFilter">Filter by severity</label>
+            <select id="severityFilter" aria-label="Filter by severity">
+                <option value="">All severities</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="HIGH">High</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="LOW">Low</option>
+                <option value="INFO">Info</option>
+            </select>
+
+            <label class="sr-only" for="typeFilter">Filter by event type</label>
+            <select id="typeFilter" aria-label="Filter by event type">
+                <option value="">All event types</option>
+                {% for event_type in event_types %}
+                <option value="{{ event_type }}">{{ event_type|replace('_', ' ')|title }}</option>
+                {% endfor %}
+            </select>
+
+            <button id="refreshEventsButton" class="secondary-button" type="button">
+                <span aria-hidden="true">↻</span> Refresh
+            </button>
+        </div>
+    </div>
+
+    <div id="eventsError" class="events-error" role="alert" hidden></div>
+
+    <div class="event-table-wrapper">
+        <table class="event-table">
+            <thead>
+                <tr>
+                    <th scope="col">Time</th>
+                    <th scope="col">Severity</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Device</th>
+                    <th scope="col">Message</th>
+                </tr>
+            </thead>
+            <tbody id="eventTableBody">
+                {% for event in initial_events %}
+                {% set device = event.get('device', {}) %}
+                <tr class="event-row"
+                    data-severity="{{ event.get('severity', 'INFO')|upper }}"
+                    data-type="{{ event.get('type', 'UNKNOWN')|upper }}"
+                    data-search="{{ (event.get('message', '') ~ ' ' ~ device.get('friendly_name', '') ~ ' ' ~ device.get('hostname', '') ~ ' ' ~ device.get('ip_address', '') ~ ' ' ~ device.get('mac_address', ''))|lower }}">
+                    <td class="event-time" data-timestamp="{{ event.get('timestamp', '') }}">{{ event.get('timestamp', 'Unknown') }}</td>
+                    <td><span class="severity-badge severity-{{ event.get('severity', 'INFO')|lower }}">{{ event.get('severity', 'INFO') }}</span></td>
+                    <td>
+                        <span class="event-type-mark" aria-hidden="true">{{ event.get('type', 'UNKNOWN')|first|upper }}</span>
+                        <span class="event-type">{{ event.get('type', 'UNKNOWN')|replace('_', ' ')|title }}</span>
+                    </td>
+                    <td>
+                        {% if device.get('mac_address') %}
+                        <a class="event-device-link" href="{{ url_for('device_page', mac_address=device.get('mac_address')) }}">
+                            {{ device.get('friendly_name') or device.get('hostname') or device.get('ip_address') or 'Unknown device' }}
+                        </a>
+                        <small>{{ device.get('ip_address') or device.get('mac_address') }}</small>
+                        {% else %}
+                        <span class="system-event">System</span>
+                        {% endif %}
+                    </td>
+                    <td class="event-message">{{ event.get('message', '') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div id="emptyEventsState" class="empty-events" {% if initial_events %}hidden{% endif %}>
+        <span class="empty-events-icon" aria-hidden="true">◎</span>
+        <strong>No events found</strong>
+        <p>Run a network scan or adjust the filters to display event activity.</p>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.SENTINEL_EVENTS_CONFIG = {
+        eventsUrl: {{ url_for('events')|tojson }},
+        deviceUrlTemplate: {{ url_for('device_page', mac_address='__MAC__')|tojson }},
+        initialEvents: {{ initial_events|tojson }}
+    };
+</script>
+<script src="{{ url_for('static', filename='js/events.js') }}"></script>
+{% endblock %}

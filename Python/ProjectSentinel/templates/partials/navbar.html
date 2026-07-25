@@ -9,10 +9,10 @@
         </a>
 
         <nav class="main-navigation" aria-label="Primary navigation">
-            <a href="{{ url_for('dashboard') }}">Dashboard</a>
-            <a href="{{ url_for('devices') }}">Devices API</a>
-            <a href="{{ url_for('events') }}">Events API</a>
-            <a href="{{ url_for('api_information') }}">API</a>
+            <a href="{{ url_for('dashboard') }}"{% if request.endpoint == 'dashboard' %} class="active" aria-current="page"{% endif %}>Dashboard</a>
+            <a href="{{ url_for('events_center') }}"{% if request.endpoint == 'events_center' %} class="active" aria-current="page"{% endif %}>Events</a>
+            <a href="{{ url_for('devices') }}">Devices JSON</a>
+            <a href="{{ url_for('api_information') }}">API Index</a>
         </nav>
 
         <div class="live-indicator">

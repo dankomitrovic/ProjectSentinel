@@ -603,6 +603,7 @@ def api_information():
                     "POST /devices/<mac_address>/approve"
                 ),
                 "device_api": "/device/<mac_address>",
+                "events_center": "/events-center",
                 "events": "/events",
                 "device_events": "/device/<mac_address>/events"
             }
@@ -809,6 +810,45 @@ def device(mac_address):
             )
         }
     ), 404
+
+
+@app.route("/events-center")
+def events_center():
+    """Display the Sentinel security events centre."""
+
+    event_list = get_recent_events(limit=100)
+
+    severity_counts = {
+        "CRITICAL": 0,
+        "HIGH": 0,
+        "MEDIUM": 0,
+        "LOW": 0,
+        "INFO": 0
+    }
+
+    event_types = set()
+
+    for event_record in event_list:
+        severity = str(
+            event_record.get("severity", "INFO")
+        ).upper()
+
+        if severity in severity_counts:
+            severity_counts[severity] += 1
+
+        event_type = str(
+            event_record.get("type", "UNKNOWN")
+        ).strip().upper()
+
+        if event_type:
+            event_types.add(event_type)
+
+    return render_template(
+        "events.html",
+        initial_events=event_list,
+        severity_counts=severity_counts,
+        event_types=sorted(event_types)
+    )
 
 
 @app.route("/events")
