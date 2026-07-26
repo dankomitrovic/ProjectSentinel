@@ -32,6 +32,57 @@
     <article><span>Behaviour state</span><strong>{{ investigation.behaviour_status }}</strong></article>
 </section>
 
+<section class="asset-intelligence-hero" aria-label="Asset intelligence profile">
+    <div class="asset-profile-copy">
+        <div class="eyebrow">Asset Intelligence · v1.1.1</div>
+        <h2>{{ asset_intelligence.asset_role }}</h2>
+        <p>{{ asset_intelligence.profile_summary }}</p>
+        <div class="asset-profile-badges">
+            <span>{{ asset_intelligence.operating_system }}</span>
+            <span>OS confidence: {{ asset_intelligence.os_confidence }}</span>
+            <span>{{ asset_intelligence.activity_state }}</span>
+        </div>
+    </div>
+    <div class="asset-health-score health-{{ asset_intelligence.health_label|lower|replace(' ', '-') }}">
+        <span>Asset health</span>
+        <strong>{{ asset_intelligence.health_score }}</strong>
+        <b>{{ asset_intelligence.health_label }}</b>
+        <div class="asset-health-track"><i data-width="{{ asset_intelligence.health_score }}"></i></div>
+    </div>
+</section>
+
+<section class="asset-intelligence-grid">
+    <article>
+        <span>Device role</span>
+        <strong>{{ asset_intelligence.asset_role }}</strong>
+        <small>Based on device type and network identity.</small>
+    </article>
+    <article>
+        <span>Likely operating system</span>
+        <strong>{{ asset_intelligence.operating_system }}</strong>
+        <small>{{ asset_intelligence.os_confidence }} confidence inference.</small>
+    </article>
+    <article>
+        <span>Identity confidence</span>
+        <strong>{{ asset_intelligence.identity_confidence }}</strong>
+        <small>{{ asset_intelligence.identity_confidence_score }}% confidence score.</small>
+    </article>
+    <article>
+        <span>Asset activity</span>
+        <strong>{{ asset_intelligence.activity_state }}</strong>
+        <small>{{ device_intelligence.sightings }} recorded sighting(s).</small>
+    </article>
+</section>
+
+<section class="panel asset-guidance-panel">
+    <div class="panel-header"><h2>Asset health recommendations</h2><p>Practical actions generated from identity, trust, behaviour and exposed services.</p></div>
+    <div class="panel-content asset-guidance-list">
+        {% for recommendation in asset_intelligence.recommendations %}
+        <article><span>{{ loop.index }}</span><p>{{ recommendation }}</p></article>
+        {% endfor %}
+    </div>
+</section>
+
 <section class="analyst-guidance" aria-label="Analyst guidance">
     <div>
         <div class="eyebrow">Recommended response</div>
@@ -142,19 +193,64 @@
         </div>
     </section>
 
-    <section class="panel asset-panel">
-        <div class="panel-header"><h2>Investigation decision</h2><p>{% if device.status != 'TRUSTED' %}Only approve the device after its identity and expected services have been confirmed.{% else %}This device is currently registered as a trusted asset.{% endif %}</p></div>
+    <section class="panel asset-panel analyst-controls-panel">
+        <div class="panel-header">
+            <h2>Analyst asset controls</h2>
+            <p>Confirm identity, maintain the asset profile, or return an uncertain device to pending review.</p>
+        </div>
         <div class="panel-content">
-        {% if device.status != "TRUSTED" %}
+        {% if device.status == "TRUSTED" %}
+            <div class="asset-control-grid">
+                <form class="approval-form profile-management-form" method="post" action="{{ url_for('update_device_profile_route', mac_address=device.mac_address) }}">
+                    <div class="form-section-heading">
+                        <div><span class="control-kicker">Trusted profile</span><h3>Edit asset details</h3></div>
+                        <span class="status-badge status-trusted">TRUSTED</span>
+                    </div>
+                    <div class="form-group"><label for="friendly_name">Friendly name</label><input id="friendly_name" name="friendly_name" type="text" maxlength="100" value="{{ device.friendly_name }}" required></div>
+                    <div class="form-group"><label for="owner">Owner</label><input id="owner" name="owner" type="text" maxlength="100" value="{{ device.owner }}" required></div>
+                    <div class="form-group"><label for="device_type">Device type</label><select id="device_type" name="device_type" required>
+                        {% set current_type = device.device_type or device.detected_device_type %}
+                        {% for option in ['Laptop', 'Desktop', 'Mobile Phone', 'Tablet', 'Smart TV', 'Gaming Console', 'Router', 'Access Point', 'Printer', 'Camera', 'NAS', 'IoT', 'Other'] %}
+                        <option value="{{ option }}"{% if current_type == option %} selected{% endif %}>{{ option }}</option>
+                        {% endfor %}
+                    </select></div>
+                    <div class="form-group"><label for="trust_level">Trust level</label><select id="trust_level" name="trust_level" required>
+                        {% for option in ['Trusted', 'Restricted', 'Monitored'] %}<option value="{{ option }}"{% if device.trust_level == option %} selected{% endif %}>{{ option }}</option>{% endfor %}
+                    </select></div>
+                    <div class="form-group form-group-wide"><label for="notes">Analyst notes</label><textarea id="notes" name="notes" maxlength="500" placeholder="Record how this asset was identified">{{ device.notes }}</textarea></div>
+                    <button class="approve-button" type="submit">Save Asset Profile</button>
+                </form>
+
+                <aside class="remove-trust-card">
+                    <span class="control-kicker">Identity uncertain?</span>
+                    <h3>Remove trust</h3>
+                    <p>Use this when you are no longer confident that the friendly name, owner or device identity is correct.</p>
+                    <ul>
+                        <li>Removes the device from <code>trusted_devices.csv</code></li>
+                        <li>Returns it to pending analyst review</li>
+                        <li>Creates a medium-severity audit event</li>
+                        <li>Future scans will no longer treat it as trusted</li>
+                    </ul>
+                    <form method="post" action="{{ url_for('remove_device_trust_route', mac_address=device.mac_address) }}" class="remove-trust-form">
+                        <button class="danger-button" type="submit" data-confirm-remove-trust>Remove Trust</button>
+                    </form>
+                    <small>This action does not block or disconnect the device from your network.</small>
+                </aside>
+            </div>
+        {% else %}
             <form class="approval-form" method="post" action="{{ url_for('approve_device_route', mac_address=device.mac_address) }}">
+                <div class="form-section-heading"><div><span class="control-kicker">Pending review</span><h3>Confirm and trust this asset</h3></div><span class="status-badge status-{{ device.status|lower }}">{{ device.status }}</span></div>
                 <div class="form-group"><label for="friendly_name">Friendly name</label><input id="friendly_name" name="friendly_name" type="text" maxlength="100" placeholder="Example: Living Room Television" required></div>
                 <div class="form-group"><label for="owner">Owner</label><input id="owner" name="owner" type="text" maxlength="100" placeholder="Example: Danko" required></div>
-                <div class="form-group"><label for="device_type">Device type</label><input id="device_type" name="device_type" type="text" maxlength="100" value="{% if device.detected_device_type != 'Unknown' %}{{ device.detected_device_type }}{% endif %}" placeholder="Example: Smart TV" required></div>
+                <div class="form-group"><label for="device_type">Device type</label><select id="device_type" name="device_type" required>
+                    <option value="">Select a device type</option>
+                    {% for option in ['Laptop', 'Desktop', 'Mobile Phone', 'Tablet', 'Smart TV', 'Gaming Console', 'Router', 'Access Point', 'Printer', 'Camera', 'NAS', 'IoT', 'Other'] %}<option value="{{ option }}"{% if device.detected_device_type == option %} selected{% endif %}>{{ option }}</option>{% endfor %}
+                </select></div>
                 <div class="form-group"><label for="trust_level">Trust level</label><select id="trust_level" name="trust_level" required><option value="Trusted" selected>Trusted</option><option value="Restricted">Restricted</option><option value="Monitored">Monitored</option></select></div>
-                <div class="form-group"><label for="notes">Analyst notes</label><textarea id="notes" name="notes" maxlength="500" placeholder="Record how the device was identified and why it was approved"></textarea></div>
-                <button class="approve-button" type="submit">Approve Device</button>
+                <div class="form-group form-group-wide"><label for="notes">Analyst notes</label><textarea id="notes" name="notes" maxlength="500" placeholder="Record how the device was identified and why it was approved"></textarea></div>
+                <button class="approve-button" type="submit">Trust Device</button>
             </form>
-        {% else %}<div class="trusted-confirmation"><strong>Trusted asset</strong><br>This device is stored in <code>trusted_devices.csv</code> and will be recognised automatically during future scans.</div>{% endif %}
+        {% endif %}
         </div>
     </section>
 </div>

@@ -14,7 +14,10 @@ from flask import (
 
 from config import LATEST_SNAPSHOT_FILE
 from events import get_device_events, get_recent_events, record_event
-from inventory import approve_device as approve_inventory_device
+from inventory import (
+    approve_device as approve_inventory_device,
+    remove_trusted_device as remove_inventory_trust
+)
 from main import main as run_monitoring_cycle
 from registry import load_device_registry
 
@@ -164,6 +167,125 @@ def build_device_intelligence(device, device_events):
         "severity_counts": severity_counts
     }
 
+
+
+def build_asset_intelligence(device, device_events, intelligence):
+    """Build a practical v1.1.0 asset profile from saved Sentinel data."""
+
+    device_type = str(
+        device.get("device_type")
+        or device.get("detected_device_type")
+        or "Unknown"
+    ).strip()
+    vendor = str(device.get("vendor") or "Unknown").strip()
+    hostname = str(device.get("hostname") or "Unknown").strip()
+    status = str(device.get("status") or "UNKNOWN").upper()
+    behaviour = device.get("behaviour_analysis", {}) or {}
+    behaviour_status = str(
+        behaviour.get("behaviour_status") or "UNKNOWN"
+    ).upper()
+    risk_score = max(0, min(100, int(device.get("risk_score", 0) or 0)))
+    ports = {
+        int(service.get("port", 0) or 0)
+        for service in (device.get("open_ports", []) or [])
+        if str(service.get("port", "")).isdigit()
+    }
+
+    profile_text = " ".join([device_type, vendor, hostname]).lower()
+    if any(term in profile_text for term in ("iphone", "ipad", "apple mobile")):
+        operating_system = "Apple iOS / iPadOS"
+        os_confidence = "Medium"
+    elif any(term in profile_text for term in ("android", "samsung", "pixel", "galaxy")):
+        operating_system = "Android"
+        os_confidence = "Medium"
+    elif any(term in profile_text for term in ("windows", "microsoft", "desktop", "workstation", "pc-")) or 3389 in ports:
+        operating_system = "Microsoft Windows"
+        os_confidence = "Medium"
+    elif any(term in profile_text for term in ("macbook", "imac", "mac os", "macos")):
+        operating_system = "Apple macOS"
+        os_confidence = "Medium"
+    elif any(term in profile_text for term in ("linux", "ubuntu", "raspberry", "debian")) or 22 in ports:
+        operating_system = "Linux or Unix-like"
+        os_confidence = "Low"
+    elif device_type.lower() in {"infrastructure", "router", "switch", "access point"}:
+        operating_system = "Embedded network operating system"
+        os_confidence = "Medium"
+    elif device_type.lower() in {"smart tv", "camera", "printer", "iot"}:
+        operating_system = "Embedded device firmware"
+        os_confidence = "Medium"
+    else:
+        operating_system = "Not identified"
+        os_confidence = "Low"
+
+    role_map = {
+        "infrastructure": "Network infrastructure",
+        "router": "Network gateway",
+        "switch": "Network infrastructure",
+        "access point": "Wireless infrastructure",
+        "printer": "Shared peripheral",
+        "camera": "Security / surveillance",
+        "smart tv": "Media and entertainment",
+        "phone": "Personal mobile device",
+        "mobile phone": "Personal mobile device",
+        "computer": "User endpoint",
+        "laptop": "User endpoint",
+        "desktop": "User endpoint",
+        "nas": "Network storage",
+    }
+    asset_role = role_map.get(device_type.lower(), "General network asset")
+
+    health_score = 100 - risk_score
+    if status == "TRUSTED":
+        health_score += 8
+    elif status in {"PENDING", "UNKNOWN", "UNTRUSTED"}:
+        health_score -= 8
+    if behaviour_status == "CHANGED":
+        health_score -= 12
+    elif behaviour_status in {"NORMAL", "STABLE"}:
+        health_score += 4
+    if intelligence.get("new_service_count", 0):
+        health_score -= min(15, intelligence["new_service_count"] * 5)
+    health_score = max(0, min(100, health_score))
+
+    if health_score >= 85:
+        health_label = "Healthy"
+    elif health_score >= 65:
+        health_label = "Needs attention"
+    elif health_score >= 40:
+        health_label = "At risk"
+    else:
+        health_label = "High concern"
+
+    confidence = str(device.get("detection_confidence") or "Low").title()
+    confidence_points = {"High": 90, "Medium": 70, "Low": 40}.get(confidence, 40)
+
+    recommendations = []
+    if status != "TRUSTED":
+        recommendations.append("Confirm ownership and approve only if the device is expected.")
+    if behaviour_status == "CHANGED":
+        recommendations.append("Review the newly detected or missing network services.")
+    if 23 in ports:
+        recommendations.append("Disable Telnet and use an encrypted management protocol.")
+    if 21 in ports:
+        recommendations.append("Confirm whether FTP is required and restrict access where possible.")
+    if not recommendations:
+        recommendations.append("Continue routine monitoring and keep device software updated.")
+
+    return {
+        "asset_role": asset_role,
+        "operating_system": operating_system,
+        "os_confidence": os_confidence,
+        "health_score": health_score,
+        "health_label": health_label,
+        "identity_confidence": confidence,
+        "identity_confidence_score": confidence_points,
+        "activity_state": "Recently observed" if intelligence.get("last_seen") else "No recorded activity",
+        "recommendations": recommendations,
+        "profile_summary": (
+            f"{asset_role} identified as {device_type}. "
+            f"Sentinel currently rates this asset as {health_label.lower()}."
+        )
+    }
 
 
 def build_investigation_context(device, device_events):
@@ -675,6 +797,58 @@ def update_snapshot_device_inventory(
     return True
 
 
+
+def remove_snapshot_device_trust(mac_address):
+    """Immediately return a snapshot device to pending review."""
+
+    snapshot, error = load_snapshot()
+
+    if error:
+        return False
+
+    requested_mac = normalise_mac_address(mac_address)
+    device_updated = False
+
+    for device_record in snapshot.get("devices", []):
+        device_mac = normalise_mac_address(
+            device_record.get("mac_address", "")
+        )
+
+        if device_mac == requested_mac:
+            device_record["status"] = "PENDING"
+            device_record["friendly_name"] = (
+                device_record.get("hostname")
+                if str(device_record.get("hostname", "")).lower() != "unknown"
+                else "Unknown Device"
+            )
+            device_record["owner"] = ""
+            device_record["device_type"] = ""
+            device_record["trust_level"] = ""
+            device_record["notes"] = ""
+            device_updated = True
+            break
+
+    if not device_updated:
+        return False
+
+    summary = snapshot.get("summary")
+
+    if isinstance(summary, dict):
+        summary["trusted_devices"] = sum(
+            1
+            for device_record in snapshot.get("devices", [])
+            if device_record.get("status") == "TRUSTED"
+        )
+        summary["pending_devices"] = sum(
+            1
+            for device_record in snapshot.get("devices", [])
+            if device_record.get("status") == "PENDING"
+        )
+
+    save_snapshot(snapshot)
+    return True
+
+
 def snapshot_error_response(error_message):
     """
     Return a standard response when snapshot data is unavailable.
@@ -1006,6 +1180,12 @@ def device_page(mac_address):
         approval_message = (
             "Device approved and added to the trusted inventory."
         )
+    elif request.args.get("updated") == "1":
+        approval_message = "Asset profile updated successfully."
+    elif request.args.get("trust_removed") == "1":
+        approval_message = (
+            "Trust removed. The device is now pending analyst review."
+        )
 
     if error:
         return render_template(
@@ -1050,6 +1230,18 @@ def device_page(mac_address):
                 "risk_reasons": ["Snapshot unavailable."],
                 "severity_counts": {}
             },
+            asset_intelligence={
+                "asset_role": "Unknown",
+                "operating_system": "Not identified",
+                "os_confidence": "Low",
+                "health_score": 0,
+                "health_label": "Unavailable",
+                "identity_confidence": "Low",
+                "identity_confidence_score": 0,
+                "activity_state": "No recorded activity",
+                "recommendations": ["Restore snapshot data and run a new scan."],
+                "profile_summary": "Asset intelligence is unavailable."
+            },
             investigation={
                 "risk_band": "UNAVAILABLE",
                 "investigation_status": "Data unavailable",
@@ -1091,6 +1283,11 @@ def device_page(mac_address):
                 approval_error=approval_error,
                 device_events=device_events,
                 device_intelligence=device_intelligence,
+                asset_intelligence=build_asset_intelligence(
+                    device_record,
+                    device_events,
+                    device_intelligence
+                ),
                 investigation=build_investigation_context(
                     device_record,
                     device_events
@@ -1240,6 +1437,103 @@ def approve_device_route(mac_address):
             "device_page",
             mac_address=requested_mac,
             approved="1"
+        )
+    )
+
+
+
+@app.route(
+    "/devices/<path:mac_address>/profile",
+    methods=["POST"]
+)
+def update_device_profile_route(mac_address):
+    """Update the analyst-managed profile for a trusted device."""
+
+    requested_mac = normalise_mac_address(mac_address)
+
+    try:
+        trusted_profile = approve_inventory_device(
+            mac_address=requested_mac,
+            friendly_name=request.form.get("friendly_name", "").strip(),
+            owner=request.form.get("owner", "").strip(),
+            device_type=request.form.get("device_type", "").strip(),
+            trust_level=request.form.get("trust_level", "Trusted").strip(),
+            notes=request.form.get("notes", "").strip()
+        )
+        update_snapshot_device_inventory(requested_mac, trusted_profile)
+    except (ValueError, OSError) as error:
+        return redirect(
+            url_for(
+                "device_page",
+                mac_address=requested_mac,
+                approval_error=str(error)
+            )
+        )
+
+    return redirect(
+        url_for(
+            "device_page",
+            mac_address=requested_mac,
+            updated="1"
+        )
+    )
+
+
+@app.route(
+    "/devices/<path:mac_address>/remove-trust",
+    methods=["POST"]
+)
+def remove_device_trust_route(mac_address):
+    """Remove a device from trusted inventory and return it to review."""
+
+    requested_mac = normalise_mac_address(mac_address)
+    snapshot, snapshot_error = load_snapshot()
+
+    if snapshot_error:
+        return redirect(
+            url_for(
+                "device_page",
+                mac_address=requested_mac,
+                approval_error=snapshot_error
+            )
+        )
+
+    ip_address = "Unknown"
+    for device_record in snapshot.get("devices", []):
+        if normalise_mac_address(device_record.get("mac_address", "")) == requested_mac:
+            ip_address = device_record.get("ip_address", "Unknown")
+            break
+
+    try:
+        removed = remove_inventory_trust(
+            requested_mac,
+            ip_address=ip_address
+        )
+    except (ValueError, OSError) as error:
+        return redirect(
+            url_for(
+                "device_page",
+                mac_address=requested_mac,
+                approval_error=str(error)
+            )
+        )
+
+    if not removed:
+        return redirect(
+            url_for(
+                "device_page",
+                mac_address=requested_mac,
+                approval_error="This device is not currently trusted."
+            )
+        )
+
+    remove_snapshot_device_trust(requested_mac)
+
+    return redirect(
+        url_for(
+            "device_page",
+            mac_address=requested_mac,
+            trust_removed="1"
         )
     )
 

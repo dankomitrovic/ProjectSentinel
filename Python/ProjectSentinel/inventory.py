@@ -674,3 +674,95 @@ def approve_device(
         "trust_level": trust_level,
         "notes": notes
     }
+
+
+def add_device_to_pending(mac_address, ip_address="Unknown", review_status="Trust Removed"):
+    """Ensure a device exists in the pending-review inventory."""
+
+    requested_mac = normalise_mac_address(mac_address)
+
+    if not requested_mac:
+        raise ValueError("A valid MAC address is required.")
+
+    pending_rows = load_pending_device_rows()
+
+    for row in pending_rows:
+        if normalise_mac_address(row["MAC Address"]) == requested_mac:
+            return False
+
+    pending_rows.append({
+        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "MAC Address": requested_mac,
+        "IP Address": str(ip_address or "Unknown").strip(),
+        "Review Status": str(review_status or "Pending Review").strip()
+    })
+
+    write_csv_rows_atomically(
+        PENDING_DEVICES_FILE,
+        PENDING_FIELDNAMES,
+        pending_rows
+    )
+
+    log_info(
+        f"Device added to pending review: mac={requested_mac}, "
+        f"reason={review_status}"
+    )
+
+    return True
+
+
+def remove_trusted_device(mac_address, ip_address="Unknown"):
+    """Remove trust from a device and return it to pending review."""
+
+    requested_mac = normalise_mac_address(mac_address)
+
+    if not requested_mac:
+        raise ValueError("A valid MAC address is required.")
+
+    trusted_rows = load_trusted_device_rows()
+    remaining_rows = []
+    removed_row = None
+
+    for row in trusted_rows:
+        if normalise_mac_address(row["MAC Address"]) == requested_mac:
+            removed_row = row
+        else:
+            remaining_rows.append(row)
+
+    if removed_row is None:
+        return False
+
+    write_csv_rows_atomically(
+        TRUSTED_DEVICES_FILE,
+        TRUSTED_FIELDNAMES,
+        remaining_rows
+    )
+
+    add_device_to_pending(
+        requested_mac,
+        ip_address=ip_address,
+        review_status="Trust Removed - Pending Review"
+    )
+
+    friendly_name = removed_row.get("Friendly Name") or "Unknown Device"
+
+    record_event(
+        event_type="DEVICE_TRUST_REMOVED",
+        severity="MEDIUM",
+        message="Analyst removed this device from the trusted inventory.",
+        device={
+            "mac_address": requested_mac,
+            "friendly_name": friendly_name
+        },
+        metadata={
+            "previous_owner": removed_row.get("Owner", ""),
+            "previous_device_type": removed_row.get("Device Type", ""),
+            "previous_trust_level": removed_row.get("Trust Level", "")
+        }
+    )
+
+    log_warning(
+        f"Trust removed from device: name={friendly_name}, mac={requested_mac}"
+    )
+
+    return True

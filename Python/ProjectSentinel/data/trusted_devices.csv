@@ -3,4 +3,3 @@ MAC Address,Friendly Name,Owner,Device Type,Trust Level,Notes
 52:54:00:12:35:03,VirtualBox DNS,Sentinel,Infrastructure,Trusted,VirtualBox Service
 52:54:00:12:35:04,VirtualBox DHCP,Sentinel,Infrastructure,Trusted,VirtualBox Service
 34:98:b5:aa:32:95,Netgear Router,Danko,Infrastructure,Trusted,
-a8:93:4a:4c:bf:c3,Living Room Television,Danko,Smart TV,Trusted,
