@@ -149,7 +149,49 @@
         </div>
     </section>
 
-    <section class="panel behaviour-panel">
+    
+<section class="exposure-intelligence-panel exposure-rating-{{ exposure_intelligence.rating|lower }}">
+    <div class="exposure-intelligence-summary">
+        <div>
+            <div class="eyebrow">Service Exposure Intelligence · v1.2.0</div>
+            <h2>{{ exposure_intelligence.headline }}</h2>
+            <p>{{ exposure_intelligence.disclaimer }}</p>
+        </div>
+        <div class="exposure-score-card">
+            <span>Exposure score</span>
+            <strong>{{ exposure_intelligence.score }}</strong>
+            <b>{{ exposure_intelligence.rating }}</b>
+        </div>
+    </div>
+    <div class="exposure-metrics">
+        <article><span>Observed services</span><strong>{{ exposure_intelligence.finding_count }}</strong></article>
+        <article><span>Requires review</span><strong>{{ exposure_intelligence.review_count }}</strong></article>
+        <article><span>High findings</span><strong>{{ exposure_intelligence.high_count }}</strong></article>
+        <article><span>Critical findings</span><strong>{{ exposure_intelligence.critical_count }}</strong></article>
+    </div>
+    {% if exposure_intelligence.findings %}
+    <div class="exposure-findings-list">
+        {% for finding in exposure_intelligence.findings %}
+        <article class="exposure-finding severity-card-{{ finding.severity|lower }}">
+            <div class="exposure-finding-heading">
+                <div>
+                    <span class="severity-pill severity-{{ finding.severity|lower }}">{{ finding.severity }}</span>
+                    <h3>{{ finding.service }} · {{ finding.port }}/{{ finding.protocol }}</h3>
+                    <small>{{ finding.category }} · {{ finding.status }} · confidence {{ finding.confidence }}</small>
+                </div>
+            </div>
+            <p>{{ finding.explanation }}</p>
+            <p class="confidence-note">{{ finding.confidence_note }}</p>
+            <div class="remediation-box"><strong>Recommended action</strong><span>{{ finding.remediation }}</span></div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No exposed TCP services were reported in the latest snapshot.</div>
+    {% endif %}
+</section>
+
+<section class="panel behaviour-panel">
         <div class="panel-header"><h2>Behaviour comparison</h2><p>Latest services compared with the established device baseline.</p></div>
         <div class="panel-content">
             <div class="behaviour-summary">

@@ -14,6 +14,7 @@ from flask import (
 
 from config import LATEST_SNAPSHOT_FILE
 from events import get_device_events, get_recent_events, record_event
+from exposure_intelligence import build_exposure_intelligence
 from inventory import (
     approve_device as approve_inventory_device,
     remove_trusted_device as remove_inventory_trust
@@ -1242,6 +1243,17 @@ def device_page(mac_address):
                 "recommendations": ["Restore snapshot data and run a new scan."],
                 "profile_summary": "Asset intelligence is unavailable."
             },
+            exposure_intelligence={
+                "score": 0,
+                "rating": "Unavailable",
+                "headline": "Exposure intelligence unavailable",
+                "finding_count": 0,
+                "critical_count": 0,
+                "high_count": 0,
+                "review_count": 0,
+                "findings": [],
+                "disclaimer": "Restore snapshot data and run a new scan."
+            },
             investigation={
                 "risk_band": "UNAVAILABLE",
                 "investigation_status": "Data unavailable",
@@ -1287,6 +1299,9 @@ def device_page(mac_address):
                     device_record,
                     device_events,
                     device_intelligence
+                ),
+                exposure_intelligence=build_exposure_intelligence(
+                    device_record
                 ),
                 investigation=build_investigation_context(
                     device_record,
