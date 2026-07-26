@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 
 from flask import (
     Flask,
@@ -32,6 +32,21 @@ scan_state = {
     "completed_at": None,
     "device_count": None,
     "error": None
+}
+
+monitor_state_lock = Lock()
+monitor_stop_event = Event()
+monitor_thread = None
+monitor_state = {
+    "enabled": False,
+    "status": "stopped",
+    "message": "Live monitoring is stopped.",
+    "interval_seconds": 60,
+    "started_at": None,
+    "last_cycle_at": None,
+    "next_cycle_at": None,
+    "cycles_completed": 0,
+    "last_error": None
 }
 
 
@@ -789,6 +804,117 @@ def execute_background_scan():
         scan_lock.release()
 
 
+def get_monitor_state():
+    """Return a safe copy of the live-monitoring state."""
+
+    with monitor_state_lock:
+        return dict(monitor_state)
+
+
+def update_monitor_state(**changes):
+    """Update selected live-monitoring state values."""
+
+    with monitor_state_lock:
+        monitor_state.update(changes)
+
+
+def monitoring_worker():
+    """Run Sentinel scan cycles until live monitoring is stopped."""
+
+    while not monitor_stop_event.is_set():
+        update_monitor_state(
+            status="waiting",
+            message="Live monitoring is active and preparing the next cycle.",
+            next_cycle_at=current_timestamp(),
+            last_error=None
+        )
+
+        lock_acquired = scan_lock.acquire(blocking=False)
+
+        if lock_acquired:
+            update_monitor_state(
+                status="scanning",
+                message="Live monitoring is scanning the network.",
+                next_cycle_at=None
+            )
+
+            execute_background_scan()
+            current_scan = get_scan_state()
+            completed = current_timestamp()
+
+            with monitor_state_lock:
+                monitor_state["last_cycle_at"] = completed
+                monitor_state["cycles_completed"] += 1
+                monitor_state["last_error"] = current_scan.get("error")
+                monitor_state["status"] = "waiting"
+                monitor_state["message"] = (
+                    "Live monitoring is active. The next cycle will run "
+                    f"in {monitor_state['interval_seconds']} seconds."
+                )
+        else:
+            update_monitor_state(
+                status="waiting",
+                message="A manual scan is already running. Live monitoring will retry.",
+                last_error=None
+            )
+
+        interval = get_monitor_state()["interval_seconds"]
+        if monitor_stop_event.wait(interval):
+            break
+
+    update_monitor_state(
+        enabled=False,
+        status="stopped",
+        message="Live monitoring is stopped.",
+        next_cycle_at=None
+    )
+
+
+def start_monitoring(interval_seconds=60):
+    """Start the background live-monitoring worker."""
+
+    global monitor_thread
+
+    interval_seconds = max(15, min(int(interval_seconds), 3600))
+
+    with monitor_state_lock:
+        if monitor_state["enabled"]:
+            return False
+
+        monitor_state.update({
+            "enabled": True,
+            "status": "starting",
+            "message": "Starting live network monitoring.",
+            "interval_seconds": interval_seconds,
+            "started_at": current_timestamp(),
+            "next_cycle_at": current_timestamp(),
+            "last_error": None
+        })
+
+    monitor_stop_event.clear()
+    monitor_thread = Thread(
+        target=monitoring_worker,
+        name="sentinel-live-monitor",
+        daemon=True
+    )
+    monitor_thread.start()
+    return True
+
+
+def stop_monitoring():
+    """Request a clean stop of the live-monitoring worker."""
+
+    if not get_monitor_state()["enabled"]:
+        return False
+
+    update_monitor_state(
+        status="stopping",
+        message="Stopping live monitoring after the current cycle."
+    )
+    monitor_stop_event.set()
+    return True
+
+
 @app.route("/")
 def dashboard():
     """
@@ -816,6 +942,7 @@ def dashboard():
             devices=[],
             generated_at=None,
             soc=build_soc_dashboard(empty_snapshot),
+            monitor=get_monitor_state(),
             dashboard_error=error
         ), 503
 
@@ -825,6 +952,7 @@ def dashboard():
         devices=snapshot.get("devices", []),
         generated_at=snapshot.get("generated_at"),
         soc=build_soc_dashboard(snapshot),
+        monitor=get_monitor_state(),
         dashboard_error=None
     )
 
@@ -1146,6 +1274,49 @@ def api_information():
             }
         }
     )
+
+
+@app.route("/monitor/status")
+def monitor_status():
+    """Return the current live-monitoring state."""
+
+    return jsonify({
+        "application": "Project Sentinel",
+        "monitor": get_monitor_state(),
+        "scan": get_scan_state()
+    })
+
+
+@app.route("/monitor/start", methods=["POST"])
+def monitor_start():
+    """Enable continuous Sentinel monitoring."""
+
+    payload = request.get_json(silent=True) or {}
+    interval = payload.get("interval_seconds", 60)
+
+    try:
+        interval = int(interval)
+    except (TypeError, ValueError):
+        interval = 60
+
+    started = start_monitoring(interval)
+    return jsonify({
+        "application": "Project Sentinel",
+        "status": "started" if started else "already_running",
+        "monitor": get_monitor_state()
+    }), 202 if started else 200
+
+
+@app.route("/monitor/stop", methods=["POST"])
+def monitor_stop():
+    """Disable continuous Sentinel monitoring."""
+
+    stopped = stop_monitoring()
+    return jsonify({
+        "application": "Project Sentinel",
+        "status": "stopping" if stopped else "already_stopped",
+        "monitor": get_monitor_state()
+    })
 
 
 @app.route("/scan", methods=["POST"])

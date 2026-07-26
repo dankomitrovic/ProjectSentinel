@@ -403,3 +403,70 @@ const searchInput =
                 );
         }
     );
+
+
+    const monitorToggleButton = document.getElementById("monitorToggleButton");
+    const monitorStatusBadge = document.getElementById("monitorStatusBadge");
+    const monitorMessage = document.getElementById("monitorMessage");
+    const monitorCycles = document.getElementById("monitorCycles");
+    const monitorLastCycle = document.getElementById("monitorLastCycle");
+    const monitorInterval = document.getElementById("monitorInterval");
+    const monitorIntervalSelect = document.getElementById("monitorIntervalSelect");
+    let monitorPollTimer = null;
+    let knownMonitorCycle = Number(monitorCycles ? monitorCycles.textContent : 0);
+
+    function presentMonitor(monitor) {
+        if (!monitorToggleButton) { return; }
+        const enabled = Boolean(monitor.enabled);
+        monitorToggleButton.dataset.enabled = String(enabled);
+        monitorToggleButton.textContent = enabled ? "Stop Live Monitoring" : "Start Live Monitoring";
+        monitorToggleButton.disabled = monitor.status === "starting" || monitor.status === "stopping";
+        monitorStatusBadge.className = "monitor-status monitor-" + (monitor.status || "stopped");
+        monitorStatusBadge.textContent = String(monitor.status || "stopped").toUpperCase();
+        monitorMessage.textContent = monitor.message || "Live monitoring status unavailable.";
+        monitorCycles.textContent = monitor.cycles_completed || 0;
+        monitorInterval.textContent = (monitor.interval_seconds || 60) + " seconds";
+        monitorLastCycle.textContent = formatTimestamp(monitor.last_cycle_at);
+        const cycles = Number(monitor.cycles_completed || 0);
+        if (cycles > knownMonitorCycle) {
+            knownMonitorCycle = cycles;
+            window.setTimeout(function () { window.location.reload(); }, 900);
+        }
+    }
+
+    async function getMonitorStatus() {
+        if (!monitorToggleButton) { return; }
+        try {
+            const response = await fetch("/monitor/status", {cache: "no-store"});
+            if (!response.ok) { throw new Error("Unable to retrieve live-monitoring status."); }
+            const result = await response.json();
+            presentMonitor(result.monitor || {});
+        } catch (error) {
+            monitorMessage.textContent = error.message;
+            monitorStatusBadge.className = "monitor-status monitor-error";
+            monitorStatusBadge.textContent = "ERROR";
+        }
+    }
+
+    async function toggleMonitor() {
+        const enabled = monitorToggleButton.dataset.enabled === "true";
+        const endpoint = enabled ? "/monitor/stop" : "/monitor/start";
+        const options = {method: "POST", headers: {"Content-Type": "application/json"}};
+        if (!enabled) { options.body = JSON.stringify({interval_seconds: Number(monitorIntervalSelect.value)}); }
+        monitorToggleButton.disabled = true;
+        try {
+            const response = await fetch(endpoint, options);
+            if (!response.ok) { throw new Error("Unable to change live-monitoring state."); }
+            const result = await response.json();
+            presentMonitor(result.monitor || {});
+        } catch (error) {
+            monitorToggleButton.disabled = false;
+            monitorMessage.textContent = error.message;
+        }
+    }
+
+    if (monitorToggleButton) {
+        monitorToggleButton.addEventListener("click", toggleMonitor);
+        getMonitorStatus();
+        monitorPollTimer = window.setInterval(getMonitorStatus, 3000);
+    }

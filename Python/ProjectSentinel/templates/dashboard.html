@@ -34,11 +34,42 @@
 
 {% include "partials/scan_panel.html" %}
 
+<section class="live-monitor-panel" aria-label="Live monitoring controls">
+    <div>
+        <span class="eyebrow">Live Monitoring Engine</span>
+        <h2>Continuous network watch</h2>
+        <p id="monitorMessage">{{ monitor.message }}</p>
+        <div class="live-monitor-meta">
+            <span>Cycles: <strong id="monitorCycles">{{ monitor.cycles_completed }}</strong></span>
+            <span>Interval: <strong id="monitorInterval">{{ monitor.interval_seconds }} seconds</strong></span>
+            <span>Last cycle: <strong id="monitorLastCycle">{{ monitor.last_cycle_at or 'Not yet run' }}</strong></span>
+        </div>
+    </div>
+    <div class="live-monitor-controls">
+        <span id="monitorStatusBadge" class="monitor-status monitor-{{ monitor.status }}">{{ monitor.status|upper }}</span>
+        <label for="monitorIntervalSelect" class="sr-only">Monitoring interval</label>
+        <select id="monitorIntervalSelect">
+            <option value="30">Every 30 seconds</option>
+            <option value="60" selected>Every 60 seconds</option>
+            <option value="120">Every 2 minutes</option>
+            <option value="300">Every 5 minutes</option>
+        </select>
+        <button id="monitorToggleButton" class="secondary-button" type="button" data-enabled="{{ 'true' if monitor.enabled else 'false' }}">
+            {{ 'Stop Live Monitoring' if monitor.enabled else 'Start Live Monitoring' }}
+        </button>
+    </div>
+</section>
+
 <section class="soc-metric-grid" aria-label="SOC summary">
     <article class="soc-metric-card">
         <span>Security posture</span>
         <strong>{{ soc.posture_score }}<small>/100</small></strong>
-        <div class="posture-track"><span style="width: {{ soc.posture_score }}%"></span></div>
+        <div class="posture-track">
+            <span
+                class="dynamic-width"
+                data-width="{{ soc.posture_score }}"
+            ></span>
+        </div>
     </article>
     <article class="soc-metric-card metric-critical">
         <span>Critical alerts</span>
@@ -110,7 +141,12 @@
             {% for severity in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] %}
             <div class="severity-row">
                 <span class="severity-badge severity-{{ severity|lower }}">{{ severity }}</span>
-                <div class="severity-bar"><span style="width: {{ [soc.severity_counts[severity] * 8, 100]|min }}%"></span></div>
+                <div class="severity-bar">
+                    <span
+                        class="dynamic-width"
+                        data-width="{{ [soc.severity_counts[severity] * 8, 100]|min }}"
+                    ></span>
+                </div>
                 <strong>{{ soc.severity_counts[severity] }}</strong>
             </div>
             {% endfor %}
