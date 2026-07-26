@@ -150,6 +150,262 @@ def build_device_intelligence(device, device_events):
     }
 
 
+
+def build_investigation_context(device, device_events):
+    """Build analyst-oriented investigation guidance for one device."""
+
+    score = int(device.get("risk_score", 0) or 0)
+    status = str(device.get("status", "UNKNOWN")).upper()
+    behaviour = device.get("behaviour_analysis", {}) or {}
+    behaviour_status = str(
+        behaviour.get("behaviour_status", "UNKNOWN")
+    ).upper()
+    services = device.get("open_ports", []) or []
+    service_ports = {
+        int(service.get("port", 0) or 0)
+        for service in services
+        if str(service.get("port", "")).isdigit()
+    }
+
+    if score >= 90:
+        risk_band = "CRITICAL"
+        investigation_status = "Immediate investigation"
+    elif score >= 70:
+        risk_band = "HIGH"
+        investigation_status = "Priority review"
+    elif score >= 40:
+        risk_band = "ELEVATED"
+        investigation_status = "Analyst review"
+    else:
+        risk_band = "LOW"
+        investigation_status = "Routine monitoring"
+
+    recommendations = []
+
+    if status != "TRUSTED":
+        recommendations.append({
+            "priority": "HIGH",
+            "title": "Confirm the device owner",
+            "detail": (
+                "Match the IP and MAC address to a known household or lab "
+                "device before granting trust."
+            )
+        })
+
+    if score >= 70:
+        recommendations.append({
+            "priority": "HIGH",
+            "title": "Review before approving",
+            "detail": (
+                "Keep the device pending until its identity, expected services "
+                "and recent behaviour have been confirmed."
+            )
+        })
+
+    if behaviour_status == "CHANGED":
+        recommendations.append({
+            "priority": "MEDIUM",
+            "title": "Validate the behaviour change",
+            "detail": (
+                "Confirm whether the new or missing services were caused by "
+                "an expected update, configuration change or device restart."
+            )
+        })
+
+    if service_ports.intersection({139, 445}):
+        recommendations.append({
+            "priority": "MEDIUM",
+            "title": "Verify Windows file-sharing exposure",
+            "detail": (
+                "Ports 139 or 445 can support NetBIOS and SMB. Confirm file "
+                "sharing is required and restrict it when it is not needed."
+            )
+        })
+
+    if service_ports.intersection({23, 21}):
+        recommendations.append({
+            "priority": "HIGH",
+            "title": "Review legacy remote access",
+            "detail": (
+                "Telnet or FTP may expose credentials or management access. "
+                "Disable the service or replace it with a safer alternative."
+            )
+        })
+
+    vendor = str(device.get("vendor", "Unknown")).strip()
+    if not vendor or vendor.lower() == "unknown":
+        recommendations.append({
+            "priority": "LOW",
+            "title": "Confirm hardware identity",
+            "detail": (
+                "Compare the MAC address with the label or network settings "
+                "on the suspected device."
+            )
+        })
+
+    if not recommendations:
+        recommendations.append({
+            "priority": "LOW",
+            "title": "Continue routine monitoring",
+            "detail": (
+                "No urgent analyst action is suggested. Recheck the device "
+                "after future scans for changes in services or risk."
+            )
+        })
+
+    severity_weight = {
+        "CRITICAL": 4,
+        "HIGH": 3,
+        "MEDIUM": 2,
+        "LOW": 1,
+        "INFO": 0
+    }
+    weighted_event_score = sum(
+        severity_weight.get(
+            str(event.get("severity", "INFO")).upper(),
+            0
+        )
+        for event in device_events
+    )
+
+    exposure = []
+    for service in services:
+        port = int(service.get("port", 0) or 0)
+        if port in {21, 23, 139, 445, 3389, 5900}:
+            concern = "Review"
+        elif port in {80, 443, 53}:
+            concern = "Expected on some devices"
+        else:
+            concern = "Observe"
+
+        exposure.append({
+            "port": port,
+            "protocol": service.get("protocol", "TCP"),
+            "service": service.get("service", "Unknown"),
+            "confidence": service.get("confidence", "Unknown"),
+            "status": service.get("status", "Unknown"),
+            "concern": concern
+        })
+
+    return {
+        "risk_band": risk_band,
+        "investigation_status": investigation_status,
+        "recommendations": recommendations[:5],
+        "exposure": exposure,
+        "weighted_event_score": weighted_event_score,
+        "behaviour_status": behaviour_status,
+        "event_types": sorted({
+            str(event.get("type", "UNKNOWN")).upper()
+            for event in device_events
+        }),
+        "analyst_note": (
+            "Sentinel recommendations are decision support based on passive "
+            "network observations. They are not proof of compromise."
+        )
+    }
+
+def build_soc_dashboard(snapshot):
+    """Build presentation-ready Security Operations Centre intelligence."""
+
+    summary = snapshot.get("summary", {}) or {}
+    devices = snapshot.get("devices", []) or []
+    recent_events = get_recent_events(limit=100)
+
+    severity_counts = {
+        "CRITICAL": 0,
+        "HIGH": 0,
+        "MEDIUM": 0,
+        "LOW": 0,
+        "INFO": 0
+    }
+
+    for event in recent_events:
+        severity = str(event.get("severity", "INFO")).upper()
+        if severity in severity_counts:
+            severity_counts[severity] += 1
+
+    actionable_events = [
+        event
+        for event in recent_events
+        if str(event.get("severity", "INFO")).upper()
+        in {"CRITICAL", "HIGH", "MEDIUM"}
+    ]
+
+    risky_devices = sorted(
+        devices,
+        key=lambda device: int(device.get("risk_score", 0) or 0),
+        reverse=True
+    )
+
+    highest_risk_device = risky_devices[0] if risky_devices else None
+    pending_devices = int(summary.get("pending_devices", 0) or 0)
+    changed_devices = int(summary.get("behaviour_changed", 0) or 0)
+    critical_high = severity_counts["CRITICAL"] + severity_counts["HIGH"]
+
+    active_concerns = critical_high + pending_devices + changed_devices
+
+    risk_score = int(summary.get("highest_device_risk", 0) or 0)
+    posture_penalty = min(
+        85,
+        (severity_counts["CRITICAL"] * 8)
+        + min(24, severity_counts["HIGH"] * 2)
+        + min(15, severity_counts["MEDIUM"])
+        + min(18, pending_devices)
+        + min(15, changed_devices * 3)
+        + max(0, (risk_score - 50) // 2)
+    )
+    posture_score = max(15, 100 - posture_penalty)
+
+    if severity_counts["CRITICAL"] > 0 or risk_score >= 90:
+        threat_level = "CRITICAL"
+        threat_message = "Immediate investigation is required."
+    elif severity_counts["HIGH"] > 0 or risk_score >= 70:
+        threat_level = "HIGH"
+        threat_message = "Significant security concerns need review."
+    elif actionable_events or risk_score >= 40 or pending_devices > 0:
+        threat_level = "ELEVATED"
+        threat_message = "Sentinel has identified items requiring attention."
+    else:
+        threat_level = "LOW"
+        threat_message = "No urgent security concerns are currently visible."
+
+    if highest_risk_device:
+        highest_concern = {
+            "name": (
+                highest_risk_device.get("friendly_name")
+                or highest_risk_device.get("hostname")
+                or "Unknown Device"
+            ),
+            "mac_address": highest_risk_device.get("mac_address", ""),
+            "ip_address": highest_risk_device.get("ip_address", "Unknown"),
+            "status": highest_risk_device.get("status", "UNKNOWN"),
+            "risk_score": highest_risk_device.get("risk_score", 0),
+            "risk_reasons": normalise_risk_reasons(
+                highest_risk_device.get("risk_reasons", [])
+            )[:3]
+        }
+    else:
+        highest_concern = None
+
+    return {
+        "threat_level": threat_level,
+        "threat_message": threat_message,
+        "posture_score": posture_score,
+        "active_concerns": active_concerns,
+        "severity_counts": severity_counts,
+        "actionable_event_count": len(actionable_events),
+        "recent_events": recent_events[:8],
+        "top_risk_devices": risky_devices[:5],
+        "highest_concern": highest_concern,
+        "asset_counts": {
+            "visible": int(summary.get("devices_visible", len(devices)) or 0),
+            "trusted": int(summary.get("trusted_devices", 0) or 0),
+            "pending": pending_devices,
+            "changed": changed_devices
+        }
+    }
+
+
 def build_asset_inventory(snapshot):
     """Build a permanent asset inventory from the registry and latest scan."""
 
@@ -542,31 +798,34 @@ def dashboard():
     snapshot, error = load_snapshot()
 
     if error:
-        return render_template(
-            "dashboard.html",
-            summary={
+        empty_snapshot = {
+            "summary": {
                 "overall_risk": "UNAVAILABLE",
                 "devices_visible": 0,
                 "trusted_devices": 0,
+                "pending_devices": 0,
+                "behaviour_changed": 0,
                 "highest_device_risk": 0
             },
+            "devices": []
+        }
+
+        return render_template(
+            "dashboard.html",
+            summary=empty_snapshot["summary"],
             devices=[],
-            generated_at=None
-        )
+            generated_at=None,
+            soc=build_soc_dashboard(empty_snapshot),
+            dashboard_error=error
+        ), 503
 
     return render_template(
         "dashboard.html",
-        summary=snapshot.get(
-            "summary",
-            {}
-        ),
-        devices=snapshot.get(
-            "devices",
-            []
-        ),
-        generated_at=snapshot.get(
-            "generated_at"
-        )
+        summary=snapshot.get("summary", {}),
+        devices=snapshot.get("devices", []),
+        generated_at=snapshot.get("generated_at"),
+        soc=build_soc_dashboard(snapshot),
+        dashboard_error=None
     )
 
 
@@ -662,6 +921,16 @@ def device_page(mac_address):
                 "missing_service_count": 0,
                 "risk_reasons": ["Snapshot unavailable."],
                 "severity_counts": {}
+            },
+            investigation={
+                "risk_band": "UNAVAILABLE",
+                "investigation_status": "Data unavailable",
+                "recommendations": [],
+                "exposure": [],
+                "weighted_event_score": 0,
+                "behaviour_status": "UNAVAILABLE",
+                "event_types": [],
+                "analyst_note": "Snapshot unavailable."
             }
         ), 503
 
@@ -693,7 +962,11 @@ def device_page(mac_address):
                 approval_message=approval_message,
                 approval_error=approval_error,
                 device_events=device_events,
-                device_intelligence=device_intelligence
+                device_intelligence=device_intelligence,
+                investigation=build_investigation_context(
+                    device_record,
+                    device_events
+                )
             )
 
     return jsonify(

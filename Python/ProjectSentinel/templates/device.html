@@ -1,35 +1,62 @@
 {% extends "base.html" %}
-{% block title %}{{ device.friendly_name }} | Project Sentinel{% endblock %}
-{% block body_class %}device-page{% endblock %}
+{% block title %}Investigation | {{ device.friendly_name or device.hostname or 'Unknown Device' }}{% endblock %}
+{% block body_class %}device-page investigation-page{% endblock %}
 {% block content %}
-<section class="device-hero">
-    <div>
-        <div class="eyebrow">Device Intelligence</div>
-        <h2>{{ device.friendly_name }}</h2>
-        <p>{{ device.ip_address }} · {{ device.mac_address }}</p>
-        <span class="status-badge {% if device.status == 'TRUSTED' %}status-trusted{% elif device.status == 'PENDING' %}status-pending{% else %}status-unknown{% endif %}">{{ device.status }}</span>
+<section class="investigation-hero risk-band-{{ investigation.risk_band|lower }}">
+    <div class="investigation-title-block">
+        <div class="eyebrow">Threat Investigation</div>
+        <h1>{{ device.friendly_name or device.hostname or 'Unknown Device' }}</h1>
+        <p>{{ device.ip_address }} · <span id="device-mac-value">{{ device.mac_address }}</span></p>
+        <div class="investigation-badges">
+            <span class="status-badge status-{{ device.status|lower }}">{{ device.status }}</span>
+            <span class="investigation-state">{{ investigation.investigation_status }}</span>
+            <span class="confidence-badge">Detection confidence: {{ device.detection_confidence|default('Unknown') }}</span>
+        </div>
     </div>
-    <div class="risk-orbit" data-risk="{{ device.risk_score|default(0) }}">
+    <div class="investigation-risk-card">
+        <span>Current device risk</span>
         <strong>{{ device.risk_score|default(0) }}</strong>
-        <span>Risk score</span>
+        <b>{{ investigation.risk_band }}</b>
+        <small>Risk is based on the latest saved snapshot.</small>
     </div>
 </section>
 
 {% if approval_message %}<div class="message message-success">{{ approval_message }}</div>{% endif %}
 {% if approval_error %}<div class="message message-error">{{ approval_error }}</div>{% endif %}
 
-<section class="intel-metrics">
+<section class="investigation-summary-grid">
     <article><span>First seen</span><strong class="js-local-time" data-timestamp="{{ device_intelligence.first_seen or '' }}">{{ device_intelligence.first_seen or 'No event history' }}</strong></article>
     <article><span>Last seen</span><strong class="js-local-time" data-timestamp="{{ device_intelligence.last_seen or '' }}">{{ device_intelligence.last_seen or 'No event history' }}</strong></article>
-    <article><span>Sightings</span><strong>{{ device_intelligence.sightings }}</strong></article>
-    <article><span>Timeline events</span><strong>{{ device_intelligence.event_count }}</strong></article>
+    <article><span>Recorded events</span><strong>{{ device_intelligence.event_count }}</strong></article>
     <article><span>Open services</span><strong>{{ device_intelligence.current_service_count }}</strong></article>
+    <article><span>Behaviour state</span><strong>{{ investigation.behaviour_status }}</strong></article>
 </section>
 
-<div class="device-intelligence-grid">
-    <section class="panel device-profile-panel">
-        <div class="panel-header"><h3>Device Profile</h3><p>Identity, ownership and network attributes.</p></div>
-        <div class="panel-content compact-details">
+<section class="analyst-guidance" aria-label="Analyst guidance">
+    <div>
+        <div class="eyebrow">Recommended response</div>
+        <h2>What should I do next?</h2>
+        <p>{{ investigation.analyst_note }}</p>
+    </div>
+    <button class="secondary-button" id="copy-device-identifiers" type="button">Copy identifiers</button>
+</section>
+
+<div class="investigation-layout">
+    <section class="panel recommendation-panel">
+        <div class="panel-header"><h2>Recommended actions</h2><p>Prioritised checks based on the current device state.</p></div>
+        <div class="panel-content recommendation-list">
+            {% for action in investigation.recommendations %}
+            <article class="recommendation-item priority-{{ action.priority|lower }}">
+                <span>{{ action.priority }}</span>
+                <div><h3>{{ action.title }}</h3><p>{{ action.detail }}</p></div>
+            </article>
+            {% else %}<div class="empty-state">No recommendations are available.</div>{% endfor %}
+        </div>
+    </section>
+
+    <section class="panel identity-panel">
+        <div class="panel-header"><h2>Identity and ownership</h2><p>Information used to determine whether this device belongs on the network.</p></div>
+        <div class="panel-content investigation-details">
             {% for label, value in [
                 ('IP address', device.ip_address),
                 ('MAC address', device.mac_address),
@@ -37,18 +64,42 @@
                 ('Vendor', device.vendor),
                 ('Assigned type', device.device_type or 'Not assigned'),
                 ('Detected type', device.detected_device_type),
-                ('Detection confidence', device.detection_confidence),
+                ('Detection reason', device.detection_reason),
                 ('Owner', device.owner or 'Not assigned'),
                 ('Trust level', device.trust_level or 'Not assigned'),
                 ('Notes', device.notes or 'No notes recorded')
             ] %}
-            <div class="detail-row"><div class="detail-label">{{ label }}</div><div class="detail-value">{{ value }}</div></div>
+            <div><span>{{ label }}</span><strong>{{ value }}</strong></div>
             {% endfor %}
         </div>
     </section>
 
+    <section class="panel exposure-panel">
+        <div class="panel-header"><h2>Network exposure</h2><p>Services visible during the latest scan and their review context.</p></div>
+        <div class="panel-content">
+            {% if investigation.exposure %}
+            <div class="exposure-table-wrapper">
+                <table class="exposure-table">
+                    <thead><tr><th>Service</th><th>Port</th><th>State</th><th>Confidence</th><th>Analyst context</th></tr></thead>
+                    <tbody>
+                    {% for service in investigation.exposure %}
+                    <tr>
+                        <td><strong>{{ service.service }}</strong></td>
+                        <td>{{ service.port }}/{{ service.protocol }}</td>
+                        <td>{{ service.status }}</td>
+                        <td>{{ service.confidence }}</td>
+                        <td><span class="exposure-context">{{ service.concern }}</span></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="empty-state">No exposed services were detected.</div>{% endif %}
+        </div>
+    </section>
+
     <section class="panel behaviour-panel">
-        <div class="panel-header"><h3>Behaviour Intelligence</h3><p>Current exposure compared with the established baseline.</p></div>
+        <div class="panel-header"><h2>Behaviour comparison</h2><p>Latest services compared with the established device baseline.</p></div>
         <div class="panel-content">
             <div class="behaviour-summary">
                 <strong>{{ device.behaviour_analysis.behaviour_status }}</strong>
@@ -60,40 +111,20 @@
                 <div><span>New</span><strong>{{ device_intelligence.new_service_count }}</strong></div>
                 <div><span>Missing</span><strong>{{ device_intelligence.missing_service_count }}</strong></div>
             </div>
-            {% if device.behaviour_analysis.new_services %}
-            <h4>New services</h4><div class="chip-list">{% for service in device.behaviour_analysis.new_services %}<span class="chip chip-warning">{{ service.service|default(service) }}{% if service.port is defined %} · {{ service.port }}{% endif %}</span>{% endfor %}</div>
-            {% endif %}
-            {% if device.behaviour_analysis.missing_services %}
-            <h4>Missing services</h4><div class="chip-list">{% for service in device.behaviour_analysis.missing_services %}<span class="chip">{{ service.service|default(service) }}{% if service.port is defined %} · {{ service.port }}{% endif %}</span>{% endfor %}</div>
-            {% endif %}
-        </div>
-    </section>
-
-    <section class="panel services-panel">
-        <div class="panel-header"><h3>Detected Services</h3><p>Validated services currently exposed by this device.</p></div>
-        <div class="panel-content">
-            {% if device.open_ports %}
-                {% for service in device.open_ports %}
-                <article class="service-card">
-                    <div><strong>{{ service.service }} · Port {{ service.port }}/{{ service.protocol }}</strong><span>{{ service.validation_reason }}</span></div>
-                    <span class="service-state">{{ service.status }}</span>
-                </article>
-                {% endfor %}
-            {% else %}<div class="empty-state">No services were detected for this device.</div>{% endif %}
+            {% if device.behaviour_analysis.new_services %}<h3>New services</h3><div class="chip-list">{% for service in device.behaviour_analysis.new_services %}<span class="chip chip-warning">{{ service.service|default(service) }}{% if service.port is defined %} · {{ service.port }}{% endif %}</span>{% endfor %}</div>{% endif %}
+            {% if device.behaviour_analysis.missing_services %}<h3>Missing services</h3><div class="chip-list">{% for service in device.behaviour_analysis.missing_services %}<span class="chip">{{ service.service|default(service) }}{% if service.port is defined %} · {{ service.port }}{% endif %}</span>{% endfor %}</div>{% endif %}
         </div>
     </section>
 
     <section class="panel risk-panel">
-        <div class="panel-header"><h3>Risk Explanation</h3><p>Why Sentinel assigned this device its current score.</p></div>
+        <div class="panel-header"><h2>Risk explanation</h2><p>Every contributor recorded by the Sentinel risk engine.</p></div>
         <div class="panel-content">
-            {% if device_intelligence.risk_reasons %}
-            <ol class="risk-reason-list">{% for reason in device_intelligence.risk_reasons %}<li><span>+</span>{{ reason }}</li>{% endfor %}</ol>
-            {% else %}<div class="empty-state">No active risk contributors were recorded.</div>{% endif %}
+            {% if device_intelligence.risk_reasons %}<ol class="risk-reason-list">{% for reason in device_intelligence.risk_reasons %}<li><span>+</span>{{ reason }}</li>{% endfor %}</ol>{% else %}<div class="empty-state">No active risk contributors were recorded.</div>{% endif %}
         </div>
     </section>
 
     <section class="panel timeline-panel">
-        <div class="panel-header timeline-heading"><div><h3>Device Timeline</h3><p>Security, behavioural and inventory history.</p></div><button id="timeline-toggle" class="secondary-button" type="button">Show all</button></div>
+        <div class="panel-header timeline-heading"><div><h2>Investigation timeline</h2><p>Security, behavioural and inventory events associated with this MAC address.</p></div><button id="timeline-toggle" class="secondary-button" type="button">Show all</button></div>
         <div class="panel-content">
             {% if device_events %}
             <div class="timeline" id="device-timeline">
@@ -102,8 +133,7 @@
                     <div class="timeline-marker severity-{{ event.severity|lower }}"></div>
                     <div class="timeline-body">
                         <div class="timeline-meta"><span class="severity-pill severity-{{ event.severity|lower }}">{{ event.severity }}</span><time class="js-local-time" data-timestamp="{{ event.timestamp }}">{{ event.timestamp }}</time></div>
-                        <h4>{{ event.type|replace('_', ' ')|title }}</h4>
-                        <p>{{ event.message }}</p>
+                        <h3>{{ event.type|replace('_', ' ')|title }}</h3><p>{{ event.message }}</p>
                     </div>
                 </article>
                 {% endfor %}
@@ -113,7 +143,7 @@
     </section>
 
     <section class="panel asset-panel">
-        <div class="panel-header"><h3>Asset Management</h3><p>{% if device.status != 'TRUSTED' %}Review this device before adding it to the trusted inventory.{% else %}This device is registered as a trusted asset.{% endif %}</p></div>
+        <div class="panel-header"><h2>Investigation decision</h2><p>{% if device.status != 'TRUSTED' %}Only approve the device after its identity and expected services have been confirmed.{% else %}This device is currently registered as a trusted asset.{% endif %}</p></div>
         <div class="panel-content">
         {% if device.status != "TRUSTED" %}
             <form class="approval-form" method="post" action="{{ url_for('approve_device_route', mac_address=device.mac_address) }}">
@@ -121,7 +151,7 @@
                 <div class="form-group"><label for="owner">Owner</label><input id="owner" name="owner" type="text" maxlength="100" placeholder="Example: Danko" required></div>
                 <div class="form-group"><label for="device_type">Device type</label><input id="device_type" name="device_type" type="text" maxlength="100" value="{% if device.detected_device_type != 'Unknown' %}{{ device.detected_device_type }}{% endif %}" placeholder="Example: Smart TV" required></div>
                 <div class="form-group"><label for="trust_level">Trust level</label><select id="trust_level" name="trust_level" required><option value="Trusted" selected>Trusted</option><option value="Restricted">Restricted</option><option value="Monitored">Monitored</option></select></div>
-                <div class="form-group"><label for="notes">Notes</label><textarea id="notes" name="notes" maxlength="500" placeholder="Optional information about the device"></textarea></div>
+                <div class="form-group"><label for="notes">Analyst notes</label><textarea id="notes" name="notes" maxlength="500" placeholder="Record how the device was identified and why it was approved"></textarea></div>
                 <button class="approve-button" type="submit">Approve Device</button>
             </form>
         {% else %}<div class="trusted-confirmation"><strong>Trusted asset</strong><br>This device is stored in <code>trusted_devices.csv</code> and will be recognised automatically during future scans.</div>{% endif %}

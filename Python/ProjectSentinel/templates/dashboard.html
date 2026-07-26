@@ -1,9 +1,155 @@
 {% extends "base.html" %}
-{% block title %}Project Sentinel{% endblock %}
-{% block body_class %}dashboard-page{% endblock %}
+{% block title %}SOC Overview | Project Sentinel{% endblock %}
+{% block body_class %}dashboard-page soc-page{% endblock %}
+
 {% block content %}
-    {% include "partials/scan_panel.html" %}
-    {% include "partials/dashboard_cards.html" %}
-    {% include "partials/device_table.html" %}
+<section class="soc-hero">
+    <div>
+        <span class="eyebrow">Security Operations Centre</span>
+        <h1>Should I be worried right now?</h1>
+        <p>{{ soc.threat_message }}</p>
+        <div class="soc-snapshot-line">
+            Latest snapshot:
+            {% if generated_at %}
+                <time data-local-time="{{ generated_at }}">{{ generated_at }}</time>
+            {% else %}
+                unavailable
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="soc-threat-card threat-{{ soc.threat_level|lower }}">
+        <span>Current threat level</span>
+        <strong>{{ soc.threat_level }}</strong>
+        <small>{{ soc.active_concerns }} active concerns</small>
+    </div>
+</section>
+
+{% if dashboard_error %}
+<section class="soc-alert" role="alert">
+    <strong>Dashboard data unavailable</strong>
+    <span>{{ dashboard_error }}</span>
+</section>
+{% endif %}
+
+{% include "partials/scan_panel.html" %}
+
+<section class="soc-metric-grid" aria-label="SOC summary">
+    <article class="soc-metric-card">
+        <span>Security posture</span>
+        <strong>{{ soc.posture_score }}<small>/100</small></strong>
+        <div class="posture-track"><span style="width: {{ soc.posture_score }}%"></span></div>
+    </article>
+    <article class="soc-metric-card metric-critical">
+        <span>Critical alerts</span>
+        <strong>{{ soc.severity_counts.CRITICAL }}</strong>
+        <small>Immediate priority</small>
+    </article>
+    <article class="soc-metric-card metric-high">
+        <span>High alerts</span>
+        <strong>{{ soc.severity_counts.HIGH }}</strong>
+        <small>Needs investigation</small>
+    </article>
+    <article class="soc-metric-card">
+        <span>Actionable events</span>
+        <strong>{{ soc.actionable_event_count }}</strong>
+        <small>Critical, high and medium</small>
+    </article>
+</section>
+
+<section class="soc-workspace-grid">
+    <article class="panel soc-concern-panel">
+        <div class="panel-header">
+            <div>
+                <span class="eyebrow">Priority investigation</span>
+                <h2>Highest current concern</h2>
+            </div>
+        </div>
+        <div class="panel-content">
+            {% if soc.highest_concern %}
+                <div class="concern-heading">
+                    <div>
+                        <h3>{{ soc.highest_concern.name }}</h3>
+                        <p>{{ soc.highest_concern.ip_address }} · {{ soc.highest_concern.mac_address }}</p>
+                    </div>
+                    <div class="concern-score">
+                        <span>Risk</span>
+                        <strong>{{ soc.highest_concern.risk_score }}</strong>
+                    </div>
+                </div>
+                <div class="concern-badges">
+                    <span class="status-badge status-{{ soc.highest_concern.status|lower }}">{{ soc.highest_concern.status }}</span>
+                    <span>{{ soc.highest_concern.risk_reasons|length }} key risk indicators</span>
+                </div>
+                {% if soc.highest_concern.risk_reasons %}
+                <ul class="soc-reason-list">
+                    {% for reason in soc.highest_concern.risk_reasons %}<li>{{ reason }}</li>{% endfor %}
+                </ul>
+                {% endif %}
+                <a class="primary-link" href="{{ url_for('device_page', mac_address=soc.highest_concern.mac_address) }}">Investigate device →</a>
+            {% else %}
+                <div class="soc-empty">No device concerns are currently available.</div>
+            {% endif %}
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header"><h2>Asset health</h2><p>Current inventory and behaviour state.</p></div>
+        <div class="panel-content asset-health-grid">
+            <div><span>Visible</span><strong>{{ soc.asset_counts.visible }}</strong></div>
+            <div><span>Trusted</span><strong>{{ soc.asset_counts.trusted }}</strong></div>
+            <div><span>Pending</span><strong>{{ soc.asset_counts.pending }}</strong></div>
+            <div><span>Changed</span><strong>{{ soc.asset_counts.changed }}</strong></div>
+        </div>
+        <div class="panel-footer-link"><a href="{{ url_for('assets_page') }}">Open asset inventory →</a></div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-header"><h2>Alert distribution</h2><p>Recent event severity across Sentinel.</p></div>
+        <div class="panel-content severity-stack">
+            {% for severity in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] %}
+            <div class="severity-row">
+                <span class="severity-badge severity-{{ severity|lower }}">{{ severity }}</span>
+                <div class="severity-bar"><span style="width: {{ [soc.severity_counts[severity] * 8, 100]|min }}%"></span></div>
+                <strong>{{ soc.severity_counts[severity] }}</strong>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="soc-workspace-grid soc-lower-grid">
+    <article class="panel">
+        <div class="panel-header"><h2>Top risk queue</h2><p>Devices ranked by current risk score.</p></div>
+        <div class="panel-content risk-queue">
+            {% for device in soc.top_risk_devices %}
+            <a href="{{ url_for('device_page', mac_address=device.mac_address) }}" class="risk-queue-item">
+                <div><strong>{{ device.friendly_name or device.hostname or 'Unknown Device' }}</strong><span>{{ device.ip_address }} · {{ device.status }}</span></div>
+                <b>{{ device.risk_score }}</b>
+            </a>
+            {% else %}<div class="soc-empty">No risk-ranked devices available.</div>{% endfor %}
+        </div>
+    </article>
+
+    <article class="panel soc-timeline-panel">
+        <div class="panel-header timeline-heading"><div><h2>Latest security events</h2><p>Most recent activity requiring analyst awareness.</p></div><a href="{{ url_for('events_center') }}">View all events</a></div>
+        <div class="panel-content soc-timeline">
+            {% for event in soc.recent_events %}
+            <article class="soc-event">
+                <span class="event-marker severity-{{ event.severity|lower }}"></span>
+                <div>
+                    <div class="soc-event-topline"><span class="severity-badge severity-{{ event.severity|lower }}">{{ event.severity }}</span><time data-local-time="{{ event.timestamp }}">{{ event.timestamp }}</time></div>
+                    <strong>{{ event.type|replace('_', ' ')|title }}</strong>
+                    <p>{{ event.message }}</p>
+                    {% if event.device and event.device.mac_address %}<a href="{{ url_for('device_page', mac_address=event.device.mac_address) }}">{{ event.device.friendly_name or event.device.ip_address or event.device.mac_address }}</a>{% endif %}
+                </div>
+            </article>
+            {% else %}<div class="soc-empty">No recent security events.</div>{% endfor %}
+        </div>
+    </article>
+</section>
+
+{% include "partials/device_table.html" %}
 {% endblock %}
+
 {% block scripts %}<script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>{% endblock %}
