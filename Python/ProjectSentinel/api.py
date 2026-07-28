@@ -15,12 +15,20 @@ from flask import (
 from config import LATEST_SNAPSHOT_FILE
 from events import get_device_events, get_recent_events, record_event
 from exposure_intelligence import build_exposure_intelligence
+from change_intelligence import build_change_intelligence
 from inventory import (
     approve_device as approve_inventory_device,
     remove_trusted_device as remove_inventory_trust
 )
 from main import main as run_monitoring_cycle
 from registry import load_device_registry
+from sensor_store import (
+    list_agents,
+    recent_telemetry,
+    record_checkin,
+    register_agent,
+    sensor_summary
+)
 
 
 app = Flask(__name__)
@@ -1090,6 +1098,111 @@ def stop_monitoring():
     return True
 
 
+
+def agent_request_authorised():
+    """Validate the optional shared key used by physical sensor agents."""
+
+    configured_key = os.environ.get("SENTINEL_AGENT_KEY", "").strip()
+    if not configured_key:
+        return True
+    supplied_key = request.headers.get("X-Sentinel-Key", "").strip()
+    return supplied_key == configured_key
+
+
+@app.route("/sensors")
+def sensors_page():
+    """Display registered ESP32 nodes and recent physical telemetry."""
+
+    return render_template(
+        "sensors.html",
+        agents=list_agents(),
+        sensor_summary=sensor_summary(),
+        telemetry=recent_telemetry(limit=60),
+        agent_key_enabled=bool(os.environ.get("SENTINEL_AGENT_KEY", "").strip())
+    )
+
+
+@app.route("/api/sensors")
+def sensors_api():
+    """Return all registered sensor agents and their latest readings."""
+
+    agents = list_agents()
+    return jsonify({
+        "application": "Project Sentinel",
+        "version": "1.5.0",
+        "summary": sensor_summary(),
+        "agents": agents
+    })
+
+
+@app.route("/api/sensors/telemetry")
+def sensor_telemetry_api():
+    """Return recent telemetry, optionally filtered to one agent."""
+
+    requested_limit = request.args.get("limit", "100")
+    try:
+        limit = min(max(int(requested_limit), 1), 500)
+    except ValueError:
+        limit = 100
+    return jsonify({
+        "application": "Project Sentinel",
+        "telemetry": recent_telemetry(limit=limit, agent_id=request.args.get("agent_id"))
+    })
+
+
+@app.route("/api/agent/register", methods=["POST"])
+def register_sensor_agent():
+    """Register or update the descriptive profile of an ESP32 agent."""
+
+    if not agent_request_authorised():
+        return jsonify({"status": "error", "message": "Invalid Sentinel agent key."}), 401
+    payload = request.get_json(silent=True) or {}
+    try:
+        agent = register_agent(payload)
+    except ValueError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+    return jsonify({"status": "registered", "agent": agent}), 201
+
+
+@app.route("/api/agent/checkin", methods=["POST"])
+def sensor_agent_checkin():
+    """Receive a heartbeat and sensor readings from an ESP32 node."""
+
+    if not agent_request_authorised():
+        return jsonify({"status": "error", "message": "Invalid Sentinel agent key."}), 401
+    payload = request.get_json(silent=True) or {}
+    try:
+        agent, telemetry, motion_started = record_checkin(payload, request.remote_addr or "")
+    except ValueError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+    if motion_started:
+        record_event(
+            event_type="SENSOR_MOTION",
+            severity="MEDIUM",
+            message=f"Motion detected by {agent.get('name', agent.get('agent_id'))}.",
+            device={
+                "friendly_name": agent.get("name", agent.get("agent_id")),
+                "ip_address": telemetry.get("ip_address", ""),
+                "mac_address": agent.get("agent_id", ""),
+                "status": "SENSOR"
+            },
+            metadata={
+                "agent_id": agent.get("agent_id"),
+                "location": agent.get("location"),
+                "temperature": telemetry.get("temperature"),
+                "humidity": telemetry.get("humidity")
+            }
+        )
+
+    return jsonify({
+        "status": "accepted",
+        "server_time": current_timestamp(),
+        "agent_id": agent.get("agent_id"),
+        "motion_event_created": motion_started
+    })
+
+
 @app.route("/")
 def dashboard():
     """
@@ -1117,6 +1230,7 @@ def dashboard():
             devices=[],
             generated_at=None,
             soc=build_soc_dashboard(empty_snapshot),
+            changes=build_change_intelligence(empty_snapshot, []),
             monitor=get_monitor_state(),
             dashboard_error=error
         ), 503
@@ -1127,8 +1241,106 @@ def dashboard():
         devices=snapshot.get("devices", []),
         generated_at=snapshot.get("generated_at"),
         soc=build_soc_dashboard(snapshot),
+        changes=build_change_intelligence(
+            snapshot,
+            get_recent_events(limit=250)
+        ),
         monitor=get_monitor_state(),
         dashboard_error=None
+    )
+
+
+@app.route("/changes")
+def changes_page():
+    """Display the dedicated network change history centre."""
+
+    requested_hours = request.args.get("hours", "24")
+
+    try:
+        hours = int(requested_hours)
+    except ValueError:
+        hours = 24
+
+    if hours not in {24, 72, 168}:
+        hours = 24
+
+    snapshot, error = load_snapshot()
+
+    if error:
+        snapshot = {"summary": {}, "devices": [], "network_changes": {}}
+        event_list = []
+    else:
+        event_list = get_recent_events(limit=500)
+
+    change_data = build_change_intelligence(
+        snapshot,
+        event_list,
+        hours=hours,
+        max_items=100
+    )
+
+    return render_template(
+        "changes.html",
+        changes=change_data,
+        selected_hours=hours,
+        change_error=error
+    ), 503 if error else 200
+
+
+@app.route("/exposures")
+def exposures_page():
+    """Display aggregated service exposure intelligence for all assets."""
+
+    snapshot, error = load_snapshot()
+
+    if error:
+        return render_template(
+            "exposures.html",
+            exposure_assets=[],
+            exposure_summary={
+                "total_assets": 0,
+                "assets_with_services": 0,
+                "review_assets": 0,
+                "critical_findings": 0,
+                "high_findings": 0
+            },
+            generated_at=None,
+            exposure_error=error
+        ), 503
+
+    exposure_assets = []
+    for device in snapshot.get("devices", []):
+        exposure = build_exposure_intelligence(device)
+        if exposure.get("finding_count", 0) == 0:
+            continue
+        exposure_assets.append({
+            "device": device,
+            "exposure": exposure
+        })
+
+    rating_order = {"Critical": 4, "High": 3, "Moderate": 2, "Low": 1, "Minimal": 0}
+    exposure_assets.sort(
+        key=lambda item: (
+            -rating_order.get(item["exposure"].get("rating", "Minimal"), 0),
+            -item["exposure"].get("score", 0),
+            str(item["device"].get("friendly_name", "Unknown"))
+        )
+    )
+
+    exposure_summary = {
+        "total_assets": len(snapshot.get("devices", [])),
+        "assets_with_services": len(exposure_assets),
+        "review_assets": sum(1 for item in exposure_assets if item["exposure"].get("review_count", 0) > 0),
+        "critical_findings": sum(item["exposure"].get("critical_count", 0) for item in exposure_assets),
+        "high_findings": sum(item["exposure"].get("high_count", 0) for item in exposure_assets)
+    }
+
+    return render_template(
+        "exposures.html",
+        exposure_assets=exposure_assets,
+        exposure_summary=exposure_summary,
+        generated_at=snapshot.get("generated_at"),
+        exposure_error=None
     )
 
 

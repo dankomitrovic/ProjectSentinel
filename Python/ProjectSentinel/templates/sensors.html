@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Sensor Centre | Project Sentinel{% endblock %}
+
+{% block content %}
+<section class="sensor-hero">
+    <div>
+        <span class="eyebrow">SENSOR & IOT CENTRE · v1.5.0</span>
+        <h1>Physical telemetry joins the SOC.</h1>
+        <p>Live ESP32 heartbeats, environmental readings, motion state and node health.</p>
+    </div>
+    <div class="sensor-live-score">
+        <span>Nodes online</span>
+        <strong>{{ sensor_summary.online_agents }} / {{ sensor_summary.total_agents }}</strong>
+        <small>Offline after 90 seconds without a heartbeat</small>
+    </div>
+</section>
+
+{% if not agent_key_enabled %}
+<div class="sensor-security-note"><strong>Lab mode:</strong> no agent key is configured. Set <code>SENTINEL_AGENT_KEY</code> before exposing Sentinel beyond your trusted lab network.</div>
+{% endif %}
+
+<section class="sensor-summary-grid">
+    <article><span>Registered nodes</span><strong>{{ sensor_summary.total_agents }}</strong></article>
+    <article><span>Online</span><strong>{{ sensor_summary.online_agents }}</strong></article>
+    <article><span>Offline</span><strong>{{ sensor_summary.offline_agents }}</strong></article>
+    <article><span>Average temperature</span><strong>{% if sensor_summary.average_temperature is not none %}{{ sensor_summary.average_temperature }}°C{% else %}—{% endif %}</strong></article>
+    <article><span>Average humidity</span><strong>{% if sensor_summary.average_humidity is not none %}{{ sensor_summary.average_humidity }}%{% else %}—{% endif %}</strong></article>
+    <article><span>Motion active</span><strong>{{ sensor_summary.motion_agents }}</strong></article>
+</section>
+
+<section class="sensor-layout">
+    <div class="sensor-node-list">
+        <div class="panel-header"><div><span class="eyebrow">NODE HEALTH</span><h2>Registered agents</h2></div><button class="secondary-button" id="refreshSensors" type="button">Refresh</button></div>
+        {% for agent in agents %}
+        <article class="sensor-node-card {% if agent.online %}sensor-online{% else %}sensor-offline{% endif %}">
+            <div class="sensor-node-heading">
+                <div><span class="sensor-status-dot"></span><div><h3>{{ agent.name }}</h3><p>{{ agent.agent_id }} · {{ agent.location }}</p></div></div>
+                <span class="sensor-state">{% if agent.online %}ONLINE{% else %}OFFLINE{% endif %}</span>
+            </div>
+            <div class="sensor-reading-grid">
+                <div><span>Temperature</span><strong>{% if agent.latest.temperature is not none %}{{ agent.latest.temperature }}°C{% else %}—{% endif %}</strong></div>
+                <div><span>Humidity</span><strong>{% if agent.latest.humidity is not none %}{{ agent.latest.humidity }}%{% else %}—{% endif %}</strong></div>
+                <div><span>Motion</span><strong>{% if agent.latest.motion %}Detected{% else %}Clear{% endif %}</strong></div>
+                <div><span>Wi-Fi RSSI</span><strong>{% if agent.latest.rssi is not none %}{{ agent.latest.rssi|int }} dBm{% else %}—{% endif %}</strong></div>
+                <div><span>Uptime</span><strong>{% if agent.latest.uptime_seconds is not none %}{{ (agent.latest.uptime_seconds / 60)|int }} min{% else %}—{% endif %}</strong></div>
+                <div><span>Firmware</span><strong>{{ agent.firmware or 'Unknown' }}</strong></div>
+            </div>
+            <footer><span>Last heartbeat</span><time>{{ agent.last_seen or 'Never' }}</time></footer>
+        </article>
+        {% else %}
+        <div class="panel empty-events"><strong>No ESP32 agents registered yet</strong><p>Send the sample check-in below and your first node will appear here.</p></div>
+        {% endfor %}
+    </div>
+
+    <aside class="sensor-sidebar">
+        <section class="panel sensor-api-panel">
+            <span class="eyebrow">FIRST CHECK-IN</span><h2>Test without hardware</h2>
+            <p>Run this from another terminal while Sentinel is running:</p>
+            <pre><code>curl -X POST http://127.0.0.1:5000/api/agent/checkin \\
+-H "Content-Type: application/json" \\
+-d '{"agent_id":"ESP32-001","name":"Lab Node","location":"Office","temperature":23.4,"humidity":48,"motion":false,"rssi":-57,"uptime":120,"firmware":"1.0.0"}'</code></pre>
+            <p class="sensor-api-hint">For an ESP32 on your Wi-Fi, replace <code>127.0.0.1</code> with the Linux VM address reachable from the board.</p>
+        </section>
+        <section class="panel sensor-timeline-panel">
+            <span class="eyebrow">RECENT TELEMETRY</span><h2>Sensor timeline</h2>
+            <div class="sensor-timeline">
+            {% for item in telemetry %}
+                <div><span class="sensor-timeline-dot {% if item.motion %}motion-active{% endif %}"></span><p><strong>{{ item.agent_id }}</strong><br>{% if item.temperature is not none %}{{ item.temperature }}°C{% endif %}{% if item.humidity is not none %} · {{ item.humidity }}% RH{% endif %}{% if item.motion %} · Motion detected{% endif %}</p><time>{{ item.timestamp }}</time></div>
+            {% else %}<p class="muted">No telemetry has been received.</p>{% endfor %}
+            </div>
+        </section>
+    </aside>
+</section>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='js/sensors.js') }}"></script>{% endblock %}

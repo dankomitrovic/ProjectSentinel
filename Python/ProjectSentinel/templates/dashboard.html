@@ -64,12 +64,7 @@
     <article class="soc-metric-card">
         <span>Security posture</span>
         <strong>{{ soc.posture_score }}<small>/100</small></strong>
-        <div class="posture-track">
-            <span
-                class="dynamic-width"
-                data-width="{{ soc.posture_score }}"
-            ></span>
-        </div>
+        <div class="posture-track"><span class="dynamic-width" data-width="{{ soc.posture_score }}"></span></div>
     </article>
     <article class="soc-metric-card metric-critical">
         <span>Critical alerts</span>
@@ -86,6 +81,49 @@
         <strong>{{ soc.actionable_event_count }}</strong>
         <small>Critical, high and medium</small>
     </article>
+</section>
+
+<section class="change-intelligence-panel change-status-{{ changes.status|lower }}" aria-label="Network change intelligence">
+    <div class="change-intelligence-heading">
+        <div>
+            <span class="eyebrow">Change Detection Engine · v1.3.0</span>
+            <h2>{{ changes.headline }}</h2>
+            <p>{{ changes.summary }}</p>
+        </div>
+        <div class="change-total-card">
+            <span>Changes / {{ changes.window_hours }}h</span>
+            <strong>{{ changes.total }}</strong>
+            <b>{{ changes.status }}</b>
+        </div>
+    </div>
+
+    <div class="change-metric-grid">
+        <article><span>New or returned</span><strong>{{ changes.counts.new_devices }}</strong></article>
+        <article><span>Offline or missing</span><strong>{{ changes.counts.offline_devices }}</strong></article>
+        <article><span>Service changes</span><strong>{{ changes.counts.service_changes }}</strong></article>
+        <article><span>Risk changes</span><strong>{{ changes.counts.risk_changes }}</strong></article>
+        <article><span>Trust changes</span><strong>{{ changes.counts.trust_changes }}</strong></article>
+    </div>
+
+    <div class="change-feed">
+        {% for change in changes.recent_changes %}
+        <article class="change-feed-item">
+            <span class="event-marker severity-{{ change.severity|lower }}"></span>
+            <div>
+                <div class="change-feed-topline">
+                    <strong>{{ change.label }}</strong>
+                    <time data-local-time="{{ change.timestamp }}">{{ change.timestamp }}</time>
+                </div>
+                <p>{{ change.device_name }} · {{ change.message }}</p>
+                {% if change.device.mac_address %}
+                <a href="{{ url_for('device_page', mac_address=change.device.mac_address) }}">Investigate asset →</a>
+                {% endif %}
+            </div>
+        </article>
+        {% else %}
+        <div class="soc-empty">No material network changes recorded in the last {{ changes.window_hours }} hours.</div>
+        {% endfor %}
+    </div>
 </section>
 
 <section class="soc-workspace-grid">
@@ -141,12 +179,7 @@
             {% for severity in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] %}
             <div class="severity-row">
                 <span class="severity-badge severity-{{ severity|lower }}">{{ severity }}</span>
-                <div class="severity-bar">
-                    <span
-                        class="dynamic-width"
-                        data-width="{{ [soc.severity_counts[severity] * 8, 100]|min }}"
-                    ></span>
-                </div>
+                <div class="severity-bar"><span class="dynamic-width" data-width="{{ [soc.severity_counts[severity] * 8, 100]|min }}"></span></div>
                 <strong>{{ soc.severity_counts[severity] }}</strong>
             </div>
             {% endfor %}

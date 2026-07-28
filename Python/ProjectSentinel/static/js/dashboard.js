@@ -470,3 +470,18 @@ const searchInput =
         getMonitorStatus();
         monitorPollTimer = window.setInterval(getMonitorStatus, 3000);
     }
+
+function applyDynamicWidths() {
+    const widthElements = document.querySelectorAll(".dynamic-width");
+
+    widthElements.forEach(function (element) {
+        const rawWidth = Number(element.dataset.width);
+        const safeWidth = Number.isFinite(rawWidth)
+            ? Math.min(Math.max(rawWidth, 0), 100)
+            : 0;
+
+        element.style.width = safeWidth + "%";
+    });
+}
+
+applyDynamicWidths();

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Change History | Project Sentinel{% endblock %}
+
+{% block content %}
+<section class="changes-page-hero">
+    <div>
+        <span class="eyebrow">CHANGE HISTORY CENTRE · v1.3.1</span>
+        <h1>What changed on the network?</h1>
+        <p>Review device, service, risk and trust changes recorded by Sentinel.</p>
+    </div>
+    <form class="change-window-form" method="get" action="{{ url_for('changes_page') }}">
+        <label for="hours">History window</label>
+        <select id="hours" name="hours" onchange="this.form.submit()">
+            <option value="24"{% if selected_hours == 24 %} selected{% endif %}>Last 24 hours</option>
+            <option value="72"{% if selected_hours == 72 %} selected{% endif %}>Last 3 days</option>
+            <option value="168"{% if selected_hours == 168 %} selected{% endif %}>Last 7 days</option>
+        </select>
+    </form>
+</section>
+
+{% if change_error %}
+<div class="events-error">{{ change_error }}</div>
+{% endif %}
+
+<section class="change-history-summary change-status-{{ changes.status|lower }}">
+    <article><span>Total changes</span><strong>{{ changes.total }}</strong></article>
+    <article><span>New or returned</span><strong>{{ changes.counts.new_devices }}</strong></article>
+    <article><span>Offline or missing</span><strong>{{ changes.counts.offline_devices }}</strong></article>
+    <article><span>Service changes</span><strong>{{ changes.counts.service_changes }}</strong></article>
+    <article><span>Risk changes</span><strong>{{ changes.counts.risk_changes }}</strong></article>
+    <article><span>Trust changes</span><strong>{{ changes.counts.trust_changes }}</strong></article>
+</section>
+
+<section class="panel change-history-panel">
+    <div class="panel-header">
+        <div>
+            <h2>{{ changes.headline }}</h2>
+            <p>{{ changes.summary }}</p>
+        </div>
+        <span class="change-history-state">{{ changes.status }}</span>
+    </div>
+
+    <div class="change-history-list">
+        {% for item in changes.recent_changes %}
+        <article class="change-history-item severity-border-{{ item.severity|lower }}">
+            <div class="change-history-marker" aria-hidden="true"></div>
+            <div>
+                <div class="change-history-topline">
+                    <div>
+                        <span class="severity-badge severity-{{ item.severity|lower }}">{{ item.severity }}</span>
+                        <strong>{{ item.label }}</strong>
+                    </div>
+                    <time>{{ item.timestamp or 'Time unavailable' }}</time>
+                </div>
+                <h3>{{ item.device_name }}</h3>
+                <p>{{ item.message }}</p>
+                {% if item.device.mac_address %}
+                <a href="{{ url_for('device_page', mac_address=item.device.mac_address) }}">Investigate asset →</a>
+                {% endif %}
+            </div>
+        </article>
+        {% else %}
+        <div class="empty-events">
+            <span class="empty-events-icon">✓</span>
+            <strong>No recorded changes in this window</strong>
+            <p>Run another scan later to compare the network with the current baseline.</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

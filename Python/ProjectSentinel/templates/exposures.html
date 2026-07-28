@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Exposure Centre | Project Sentinel{% endblock %}
+
+{% block content %}
+<section class="exposure-page-hero">
+    <div>
+        <span class="eyebrow">EXPOSURE INTELLIGENCE CENTRE · v1.4.0</span>
+        <h1>Which assets need service review?</h1>
+        <p>Prioritised network-service exposure across the latest Sentinel snapshot.</p>
+    </div>
+    <div class="exposure-hero-score">
+        <span>Assets requiring review</span>
+        <strong>{{ exposure_summary.review_assets }}</strong>
+        <small>{{ exposure_summary.assets_with_services }} assets expose services</small>
+    </div>
+</section>
+
+{% if exposure_error %}<div class="events-error">{{ exposure_error }}</div>{% endif %}
+
+<section class="exposure-summary-grid">
+    <article><span>Total assets</span><strong>{{ exposure_summary.total_assets }}</strong></article>
+    <article><span>With services</span><strong>{{ exposure_summary.assets_with_services }}</strong></article>
+    <article><span>Needs review</span><strong>{{ exposure_summary.review_assets }}</strong></article>
+    <article><span>High findings</span><strong>{{ exposure_summary.high_findings }}</strong></article>
+    <article><span>Critical findings</span><strong>{{ exposure_summary.critical_findings }}</strong></article>
+</section>
+
+<section class="exposure-centre-list">
+{% for item in exposure_assets %}
+<article class="exposure-asset-card exposure-rating-{{ item.exposure.rating|lower }}">
+    <div class="exposure-asset-header">
+        <div>
+            <span class="eyebrow">{{ item.device.status or 'UNKNOWN' }} ASSET</span>
+            <h2>{{ item.device.friendly_name or 'Unknown Device' }}</h2>
+            <p>{{ item.device.ip_address or 'Unknown IP' }} · {{ item.device.mac_address or 'Unknown MAC' }}</p>
+        </div>
+        <div class="exposure-asset-score">
+            <span>Exposure</span><strong>{{ item.exposure.score }}</strong><small>{{ item.exposure.rating }}</small>
+        </div>
+    </div>
+    <div class="exposure-asset-metrics">
+        <span><strong>{{ item.exposure.finding_count }}</strong> observed</span>
+        <span><strong>{{ item.exposure.review_count }}</strong> review</span>
+        <span><strong>{{ item.exposure.high_count }}</strong> high</span>
+        <span><strong>{{ item.exposure.critical_count }}</strong> critical</span>
+    </div>
+    <div class="exposure-service-chips">
+        {% for finding in item.exposure.findings %}
+        <span class="exposure-service-chip severity-{{ finding.severity|lower }}">{{ finding.service }} {{ finding.port }}/{{ finding.protocol }}</span>
+        {% endfor %}
+    </div>
+    <div class="exposure-asset-footer">
+        <p>{{ item.exposure.headline }}</p>
+        <a href="{{ url_for('device_page', mac_address=item.device.mac_address) }}">Investigate asset →</a>
+    </div>
+</article>
+{% else %}
+<div class="panel empty-events"><strong>No exposed TCP services detected</strong><p>Run a scan to refresh the current service inventory.</p></div>
+{% endfor %}
+</section>
+{% endblock %}
