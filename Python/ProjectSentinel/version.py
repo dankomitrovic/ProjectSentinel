@@ -8,9 +8,9 @@ Sentinel displays the same application identity.
 """
 
 APPLICATION_NAME = "PROJECT SENTINEL"
-APPLICATION_DESCRIPTION = "Network Discovery, Asset Intelligence, Service Exposure, Change Detection, SOC Monitoring, Investigation and ESP32 Sensor Intelligence"
+APPLICATION_DESCRIPTION = "Network Discovery, Asset Intelligence, Service Exposure, Change Detection, SOC Monitoring, Investigation and ESP32 Sensor Intelligence and Environmental Analytics"
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 STATUS = "Beta"
 
 AUTHOR = "Danko Mitrovic"

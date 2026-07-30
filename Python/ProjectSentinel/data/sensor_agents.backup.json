@@ -1,0 +1,48 @@
+{
+  "ESP32-001": {
+    "agent_id": "ESP32-001",
+    "name": "Sentinel Node 1",
+    "location": "Office",
+    "description": "",
+    "firmware": "2.1.0",
+    "created_at": "2026-07-28T02:55:19-04:00",
+    "updated_at": "2026-07-30T00:15:39-04:00",
+    "last_seen": "2026-07-30T00:15:39-04:00",
+    "enabled": true,
+    "latest": {
+      "agent_id": "ESP32-001",
+      "timestamp": "2026-07-30T00:15:39-04:00",
+      "temperature": 20.9,
+      "humidity": 53.3,
+      "motion": true,
+      "rssi": -64.0,
+      "uptime_seconds": 1271.0,
+      "relay_state": "",
+      "firmware": "2.1.0",
+      "ip_address": "192.168.1.177"
+    }
+  },
+  "TEST": {
+    "agent_id": "TEST",
+    "name": "Lab",
+    "location": "Office",
+    "description": "",
+    "firmware": "2.1.0",
+    "created_at": "2026-07-29T23:23:48-04:00",
+    "updated_at": "2026-07-29T23:23:48-04:00",
+    "last_seen": "2026-07-29T23:23:48-04:00",
+    "enabled": true,
+    "latest": {
+      "agent_id": "TEST",
+      "timestamp": "2026-07-29T23:23:48-04:00",
+      "temperature": 20.0,
+      "humidity": 50.0,
+      "motion": true,
+      "rssi": -60.0,
+      "uptime_seconds": 30.0,
+      "relay_state": "",
+      "firmware": "2.1.0",
+      "ip_address": "127.0.0.1"
+    }
+  }
+}

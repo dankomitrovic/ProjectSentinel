@@ -1,1 +1,25 @@
-{}
+{
+  "ESP32-001": {
+    "agent_id": "ESP32-001",
+    "name": "Sentinel Node 1",
+    "location": "Office",
+    "description": "",
+    "firmware": "2.1.0",
+    "created_at": "2026-07-28T02:55:19-04:00",
+    "updated_at": "2026-07-30T00:28:43-04:00",
+    "last_seen": "2026-07-30T00:28:43-04:00",
+    "enabled": true,
+    "latest": {
+      "agent_id": "ESP32-001",
+      "timestamp": "2026-07-30T00:28:43-04:00",
+      "temperature": 21.6,
+      "humidity": 50.6,
+      "motion": true,
+      "rssi": -70.0,
+      "uptime_seconds": 2054.0,
+      "relay_state": "",
+      "firmware": "2.1.0",
+      "ip_address": "192.168.1.177"
+    }
+  }
+}

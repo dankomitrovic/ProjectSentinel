@@ -22,6 +22,7 @@ from inventory import (
 )
 from main import main as run_monitoring_cycle
 from registry import load_device_registry
+from sensor_intelligence import build_sensor_intelligence
 from sensor_store import (
     list_agents,
     recent_telemetry,
@@ -1113,11 +1114,15 @@ def agent_request_authorised():
 def sensors_page():
     """Display registered ESP32 nodes and recent physical telemetry."""
 
+    agents = list_agents()
+    telemetry = recent_telemetry(limit=500)
+    intelligence = build_sensor_intelligence(agents, telemetry, hours=24)
     return render_template(
         "sensors.html",
-        agents=list_agents(),
+        agents=intelligence["agents"],
         sensor_summary=sensor_summary(),
-        telemetry=recent_telemetry(limit=60),
+        telemetry=telemetry[:80],
+        sensor_intelligence=intelligence,
         agent_key_enabled=bool(os.environ.get("SENTINEL_AGENT_KEY", "").strip())
     )
 
@@ -1129,7 +1134,7 @@ def sensors_api():
     agents = list_agents()
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.5.0",
+        "version": "1.6.0",
         "summary": sensor_summary(),
         "agents": agents
     })

@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Sensor Centre | Project Sentinel{% endblock %}
+{% block title %}Sensor Intelligence | Project Sentinel{% endblock %}
 
 {% block content %}
 <section class="sensor-hero">
     <div>
-        <span class="eyebrow">SENSOR & IOT CENTRE · v1.5.0</span>
-        <h1>Physical telemetry joins the SOC.</h1>
-        <p>Live ESP32 heartbeats, environmental readings, motion state and node health.</p>
+        <span class="eyebrow">SENSOR INTELLIGENCE · v1.6.0</span>
+        <h1>Physical telemetry becomes actionable intelligence.</h1>
+        <p>Environmental classification, node health scoring, motion awareness and 24-hour trends.</p>
     </div>
     <div class="sensor-live-score">
-        <span>Nodes online</span>
-        <strong>{{ sensor_summary.online_agents }} / {{ sensor_summary.total_agents }}</strong>
-        <small>Offline after 90 seconds without a heartbeat</small>
+        <span>Fleet health</span>
+        <strong>{{ sensor_intelligence.fleet_score }}/100</strong>
+        <small>{{ sensor_intelligence.posture }} · {{ sensor_summary.online_agents }}/{{ sensor_summary.total_agents }} nodes online</small>
     </div>
 </section>
 
@@ -20,32 +20,57 @@
 <div class="sensor-security-note"><strong>Lab mode:</strong> no agent key is configured. Set <code>SENTINEL_AGENT_KEY</code> before exposing Sentinel beyond your trusted lab network.</div>
 {% endif %}
 
-<section class="sensor-summary-grid">
+<section class="sensor-summary-grid sensor-intelligence-summary">
     <article><span>Registered nodes</span><strong>{{ sensor_summary.total_agents }}</strong></article>
     <article><span>Online</span><strong>{{ sensor_summary.online_agents }}</strong></article>
-    <article><span>Offline</span><strong>{{ sensor_summary.offline_agents }}</strong></article>
-    <article><span>Average temperature</span><strong>{% if sensor_summary.average_temperature is not none %}{{ sensor_summary.average_temperature }}°C{% else %}—{% endif %}</strong></article>
-    <article><span>Average humidity</span><strong>{% if sensor_summary.average_humidity is not none %}{{ sensor_summary.average_humidity }}%{% else %}—{% endif %}</strong></article>
+    <article><span>Fleet score</span><strong>{{ sensor_intelligence.fleet_score }}</strong></article>
+    <article><span>24h samples</span><strong>{{ sensor_intelligence.telemetry_samples }}</strong></article>
+    <article><span>Temperature</span><strong>{% if sensor_summary.average_temperature is not none %}{{ sensor_summary.average_temperature }}°C{% else %}—{% endif %}</strong></article>
     <article><span>Motion active</span><strong>{{ sensor_summary.motion_agents }}</strong></article>
 </section>
 
+{% if sensor_intelligence.alerts %}
+<section class="sensor-alert-strip" aria-label="Active sensor alerts">
+    <div><span class="eyebrow">ACTIVE INTELLIGENCE</span><h2>{{ sensor_intelligence.alerts|length }} item{% if sensor_intelligence.alerts|length != 1 %}s{% endif %} need awareness</h2></div>
+    <div class="sensor-alert-list">
+        {% for alert in sensor_intelligence.alerts[:5] %}
+        <article class="sensor-alert sensor-level-{{ alert.severity }}"><strong>{{ alert.title }}</strong><span>{{ alert.agent.name }} · {{ alert.message }}</span></article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
 <section class="sensor-layout">
     <div class="sensor-node-list">
-        <div class="panel-header"><div><span class="eyebrow">NODE HEALTH</span><h2>Registered agents</h2></div><button class="secondary-button" id="refreshSensors" type="button">Refresh</button></div>
+        <div class="panel-header"><div><span class="eyebrow">NODE INTELLIGENCE</span><h2>Registered agents</h2></div><button class="secondary-button" id="refreshSensors" type="button">Refresh</button></div>
         {% for agent in agents %}
         <article class="sensor-node-card {% if agent.online %}sensor-online{% else %}sensor-offline{% endif %}">
             <div class="sensor-node-heading">
                 <div><span class="sensor-status-dot"></span><div><h3>{{ agent.name }}</h3><p>{{ agent.agent_id }} · {{ agent.location }}</p></div></div>
-                <span class="sensor-state">{% if agent.online %}ONLINE{% else %}OFFLINE{% endif %}</span>
+                <div class="sensor-heading-actions"><span class="sensor-health-badge sensor-level-{{ agent.intelligence.health_severity }}">{{ agent.intelligence.health_score }}/100 · {{ agent.intelligence.health_label }}</span><span class="sensor-state">{% if agent.online %}ONLINE{% else %}OFFLINE{% endif %}</span></div>
             </div>
-            <div class="sensor-reading-grid">
-                <div><span>Temperature</span><strong>{% if agent.latest.temperature is not none %}{{ agent.latest.temperature }}°C{% else %}—{% endif %}</strong></div>
-                <div><span>Humidity</span><strong>{% if agent.latest.humidity is not none %}{{ agent.latest.humidity }}%{% else %}—{% endif %}</strong></div>
-                <div><span>Motion</span><strong>{% if agent.latest.motion %}Detected{% else %}Clear{% endif %}</strong></div>
-                <div><span>Wi-Fi RSSI</span><strong>{% if agent.latest.rssi is not none %}{{ agent.latest.rssi|int }} dBm{% else %}—{% endif %}</strong></div>
-                <div><span>Uptime</span><strong>{% if agent.latest.uptime_seconds is not none %}{{ (agent.latest.uptime_seconds / 60)|int }} min{% else %}—{% endif %}</strong></div>
-                <div><span>Firmware</span><strong>{{ agent.firmware or 'Unknown' }}</strong></div>
+
+            <div class="sensor-reading-grid sensor-reading-intelligence">
+                <div><span>Temperature</span><strong>{% if agent.latest.temperature is not none %}{{ agent.latest.temperature }}°C{% else %}—{% endif %}</strong><small class="sensor-level-text-{{ agent.intelligence.temperature.severity }}">{{ agent.intelligence.temperature.label }}</small></div>
+                <div><span>Humidity</span><strong>{% if agent.latest.humidity is not none %}{{ agent.latest.humidity }}%{% else %}—{% endif %}</strong><small class="sensor-level-text-{{ agent.intelligence.humidity.severity }}">{{ agent.intelligence.humidity.label }}</small></div>
+                <div><span>Motion</span><strong>{% if agent.latest.motion %}Detected{% else %}Clear{% endif %}</strong><small>{{ agent.intelligence.motion_count_24h }} active samples / 24h</small></div>
+                <div><span>Wi-Fi RSSI</span><strong>{% if agent.latest.rssi is not none %}{{ agent.latest.rssi|int }} dBm{% else %}—{% endif %}</strong><small class="sensor-level-text-{{ agent.intelligence.rssi.severity }}">{{ agent.intelligence.rssi.label }}</small></div>
+                <div><span>Uptime</span><strong>{% if agent.latest.uptime_seconds is not none %}{{ (agent.latest.uptime_seconds / 60)|int }} min{% else %}—{% endif %}</strong><small>Current boot session</small></div>
+                <div><span>Firmware</span><strong>{{ agent.firmware or 'Unknown' }}</strong><small>ESP32 agent</small></div>
             </div>
+
+            <section class="sensor-trend-grid" aria-label="24-hour telemetry trends">
+                {% for trend_name, trend in agent.intelligence.trends.items() %}
+                <article class="sensor-trend-card">
+                    <header><span>{{ trend_name|title }} · 24h</span><strong>{% if trend.latest is not none %}{{ trend.latest }}{{ trend.unit }}{% else %}—{% endif %}</strong></header>
+                    {% if trend.points %}
+                    <svg viewBox="0 0 300 74" role="img" aria-label="{{ trend_name }} trend"><polyline points="{{ trend.points }}" /></svg>
+                    <footer><span>Low {{ trend.minimum }}{{ trend.unit }}</span><span>High {{ trend.maximum }}{{ trend.unit }}</span></footer>
+                    {% else %}<div class="sensor-no-trend">More telemetry is needed</div>{% endif %}
+                </article>
+                {% endfor %}
+            </section>
+
             <footer><span>Last heartbeat</span><time>{{ agent.last_seen or 'Never' }}</time></footer>
         </article>
         {% else %}
@@ -54,13 +79,14 @@
     </div>
 
     <aside class="sensor-sidebar">
-        <section class="panel sensor-api-panel">
-            <span class="eyebrow">FIRST CHECK-IN</span><h2>Test without hardware</h2>
-            <p>Run this from another terminal while Sentinel is running:</p>
-            <pre><code>curl -X POST http://127.0.0.1:5000/api/agent/checkin \\
--H "Content-Type: application/json" \\
--d '{"agent_id":"ESP32-001","name":"Lab Node","location":"Office","temperature":23.4,"humidity":48,"motion":false,"rssi":-57,"uptime":120,"firmware":"1.0.0"}'</code></pre>
-            <p class="sensor-api-hint">For an ESP32 on your Wi-Fi, replace <code>127.0.0.1</code> with the Linux VM address reachable from the board.</p>
+        <section class="panel sensor-guidance-panel">
+            <span class="eyebrow">ANALYST GUIDANCE</span><h2>How Sentinel evaluates sensors</h2>
+            <div class="sensor-guidance-list">
+                <p><strong>Temperature</strong><span>15–27°C is treated as the normal indoor range.</span></p>
+                <p><strong>Humidity</strong><span>35–60% is treated as comfortable.</span></p>
+                <p><strong>Wi-Fi</strong><span>-67 dBm or stronger supports reliable telemetry.</span></p>
+                <p><strong>Heartbeat</strong><span>A node is offline after 90 seconds without a check-in.</span></p>
+            </div>
         </section>
         <section class="panel sensor-timeline-panel">
             <span class="eyebrow">RECENT TELEMETRY</span><h2>Sensor timeline</h2>
