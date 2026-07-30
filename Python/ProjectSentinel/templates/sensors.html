@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Sensor Intelligence | Project Sentinel{% endblock %}
+{% block title %}Sensor Live Operations | Project Sentinel{% endblock %}
 
 {% block content %}
 <section class="sensor-hero">
     <div>
-        <span class="eyebrow">SENSOR INTELLIGENCE · v1.6.0</span>
-        <h1>Physical telemetry becomes actionable intelligence.</h1>
-        <p>Environmental classification, node health scoring, motion awareness and 24-hour trends.</p>
+        <span class="eyebrow">SENSOR LIVE OPERATIONS · v1.6.1</span>
+        <h1>Reliable heartbeats. Clear health. Live operations.</h1>
+        <p>Weighted health scoring, automatic updates, heartbeat freshness and operational diagnostics.</p>
     </div>
     <div class="sensor-live-score">
         <span>Fleet health</span>
-        <strong>{{ sensor_intelligence.fleet_score }}/100</strong>
-        <small>{{ sensor_intelligence.posture }} · {{ sensor_summary.online_agents }}/{{ sensor_summary.total_agents }} nodes online</small>
+        <strong id="fleetHealthScore">{{ sensor_intelligence.fleet_score }}/100</strong>
+        <small id="fleetHealthPosture">{{ sensor_intelligence.posture }} · {{ sensor_summary.online_agents }}/{{ sensor_summary.total_agents }} nodes online</small>
     </div>
 </section>
 
@@ -21,12 +21,24 @@
 {% endif %}
 
 <section class="sensor-summary-grid sensor-intelligence-summary">
-    <article><span>Registered nodes</span><strong>{{ sensor_summary.total_agents }}</strong></article>
-    <article><span>Online</span><strong>{{ sensor_summary.online_agents }}</strong></article>
-    <article><span>Fleet score</span><strong>{{ sensor_intelligence.fleet_score }}</strong></article>
-    <article><span>24h samples</span><strong>{{ sensor_intelligence.telemetry_samples }}</strong></article>
-    <article><span>Temperature</span><strong>{% if sensor_summary.average_temperature is not none %}{{ sensor_summary.average_temperature }}°C{% else %}—{% endif %}</strong></article>
-    <article><span>Motion active</span><strong>{{ sensor_summary.motion_agents }}</strong></article>
+    <article><span>Registered nodes</span><strong id="summaryRegistered">{{ sensor_summary.total_agents }}</strong></article>
+    <article><span>Online</span><strong id="summaryOnline">{{ sensor_summary.online_agents }}</strong></article>
+    <article><span>Fleet score</span><strong id="summaryFleetScore">{{ sensor_intelligence.fleet_score }}</strong></article>
+    <article><span>24h samples</span><strong id="summarySamples">{{ sensor_intelligence.telemetry_samples }}</strong></article>
+    <article><span>Temperature</span><strong id="summaryTemperature">{% if sensor_summary.average_temperature is not none %}{{ sensor_summary.average_temperature }}°C{% else %}—{% endif %}</strong></article>
+    <article><span>Motion active</span><strong id="summaryMotion">{{ sensor_summary.motion_agents }}</strong></article>
+</section>
+
+<section class="sensor-operations-panel">
+    <div><span class="eyebrow">SYSTEM STATUS</span><h2>Sentinel operations</h2></div>
+    <div class="sensor-operations-grid">
+        <article><span class="sensor-operation-dot sensor-level-normal"></span><div><strong>Sentinel API</strong><small>Operational</small></div></article>
+        <article><span class="sensor-operation-dot sensor-level-normal"></span><div><strong>Sensor storage</strong><small>Operational</small></div></article>
+        <article><span class="sensor-operation-dot" id="fleetOperationDot"></span><div><strong>ESP32 fleet</strong><small id="fleetOperationLabel">{{ sensor_summary.online_agents }}/{{ sensor_summary.total_agents }} online</small></div></article>
+        <article><span class="sensor-operation-dot sensor-level-normal"></span><div><strong>Last telemetry</strong><small id="lastTelemetryOperation">{{ sensor_intelligence.operations.last_telemetry or 'No telemetry' }}</small></div></article>
+        <article><span class="sensor-operation-dot sensor-level-advisory"></span><div><strong>Last motion</strong><small id="lastMotionOperation">{{ sensor_intelligence.operations.last_motion or 'No motion recorded' }}</small></div></article>
+        <article><span class="sensor-operation-dot sensor-level-normal"></span><div><strong>Live refresh</strong><small id="liveRefreshStatus">Connected · every 10 sec</small></div></article>
+    </div>
 </section>
 
 {% if sensor_intelligence.alerts %}
@@ -42,58 +54,56 @@
 
 <section class="sensor-layout">
     <div class="sensor-node-list">
-        <div class="panel-header"><div><span class="eyebrow">NODE INTELLIGENCE</span><h2>Registered agents</h2></div><button class="secondary-button" id="refreshSensors" type="button">Refresh</button></div>
+        <div class="panel-header"><div><span class="eyebrow">NODE INTELLIGENCE</span><h2>Registered agents</h2></div><button class="secondary-button" id="refreshSensors" type="button">Refresh now</button></div>
         {% for agent in agents %}
-        <article class="sensor-node-card {% if agent.online %}sensor-online{% else %}sensor-offline{% endif %}">
+        <article class="sensor-node-card {% if agent.online %}sensor-online{% else %}sensor-offline{% endif %}" data-agent-id="{{ agent.agent_id }}">
             <div class="sensor-node-heading">
                 <div><span class="sensor-status-dot"></span><div><h3>{{ agent.name }}</h3><p>{{ agent.agent_id }} · {{ agent.location }}</p></div></div>
-                <div class="sensor-heading-actions"><span class="sensor-health-badge sensor-level-{{ agent.intelligence.health_severity }}">{{ agent.intelligence.health_score }}/100 · {{ agent.intelligence.health_label }}</span><span class="sensor-state">{% if agent.online %}ONLINE{% else %}OFFLINE{% endif %}</span></div>
+                <div class="sensor-heading-actions"><span class="sensor-health-badge sensor-level-{{ agent.intelligence.health_severity }}" data-field="health">{{ agent.intelligence.health_score }}/100 · {{ agent.intelligence.health_label }}</span><span class="sensor-state" data-field="state">{% if agent.online %}ONLINE{% else %}OFFLINE{% endif %}</span></div>
             </div>
 
             <div class="sensor-reading-grid sensor-reading-intelligence">
-                <div><span>Temperature</span><strong>{% if agent.latest.temperature is not none %}{{ agent.latest.temperature }}°C{% else %}—{% endif %}</strong><small class="sensor-level-text-{{ agent.intelligence.temperature.severity }}">{{ agent.intelligence.temperature.label }}</small></div>
-                <div><span>Humidity</span><strong>{% if agent.latest.humidity is not none %}{{ agent.latest.humidity }}%{% else %}—{% endif %}</strong><small class="sensor-level-text-{{ agent.intelligence.humidity.severity }}">{{ agent.intelligence.humidity.label }}</small></div>
-                <div><span>Motion</span><strong>{% if agent.latest.motion %}Detected{% else %}Clear{% endif %}</strong><small>{{ agent.intelligence.motion_count_24h }} active samples / 24h</small></div>
-                <div><span>Wi-Fi RSSI</span><strong>{% if agent.latest.rssi is not none %}{{ agent.latest.rssi|int }} dBm{% else %}—{% endif %}</strong><small class="sensor-level-text-{{ agent.intelligence.rssi.severity }}">{{ agent.intelligence.rssi.label }}</small></div>
-                <div><span>Uptime</span><strong>{% if agent.latest.uptime_seconds is not none %}{{ (agent.latest.uptime_seconds / 60)|int }} min{% else %}—{% endif %}</strong><small>Current boot session</small></div>
-                <div><span>Firmware</span><strong>{{ agent.firmware or 'Unknown' }}</strong><small>ESP32 agent</small></div>
+                <div><span>Temperature</span><strong data-field="temperature">{% if agent.latest.temperature is not none %}{{ agent.latest.temperature }}°C{% else %}—{% endif %}</strong><small data-field="temperature-status" class="sensor-level-text-{{ agent.intelligence.temperature.severity }}">{{ agent.intelligence.temperature.label }}</small></div>
+                <div><span>Humidity</span><strong data-field="humidity">{% if agent.latest.humidity is not none %}{{ agent.latest.humidity }}%{% else %}—{% endif %}</strong><small data-field="humidity-status" class="sensor-level-text-{{ agent.intelligence.humidity.severity }}">{{ agent.intelligence.humidity.label }}</small></div>
+                <div><span>Motion</span><strong data-field="motion">{% if agent.latest.motion %}Detected{% else %}Clear{% endif %}</strong><small data-field="motion-context">{% if agent.intelligence.motion.active_seconds is not none %}Active for {{ agent.intelligence.motion.active_seconds }} sec{% elif agent.intelligence.motion.last_motion %}Last motion {{ agent.intelligence.motion.last_motion }}{% else %}No motion recorded{% endif %}</small></div>
+                <div><span>Wi-Fi RSSI</span><strong data-field="rssi">{% if agent.latest.rssi is not none %}{{ agent.latest.rssi|int }} dBm{% else %}—{% endif %}</strong><small data-field="rssi-status" class="sensor-level-text-{{ agent.intelligence.rssi.severity }}">{{ agent.intelligence.rssi.label }}</small></div>
+                <div><span>Uptime</span><strong data-field="uptime">{% if agent.latest.uptime_seconds is not none %}{{ (agent.latest.uptime_seconds / 60)|int }} min{% else %}—{% endif %}</strong><small>Current boot session</small></div>
+                <div><span>Firmware</span><strong data-field="firmware">{{ agent.firmware or 'Unknown' }}</strong><small>ESP32 agent</small></div>
+            </div>
+
+            <div class="sensor-score-breakdown">
+                <span>Heartbeat {{ agent.intelligence.health_components.heartbeat }}/35</span><span>Wi-Fi {{ agent.intelligence.health_components.wifi }}/20</span><span>Sensors {{ agent.intelligence.health_components.sensors }}/20</span><span>Firmware {{ agent.intelligence.health_components.firmware }}/15</span><span>Environment {{ agent.intelligence.health_components.environment }}/10</span>
             </div>
 
             <section class="sensor-trend-grid" aria-label="24-hour telemetry trends">
                 {% for trend_name, trend in agent.intelligence.trends.items() %}
                 <article class="sensor-trend-card">
                     <header><span>{{ trend_name|title }} · 24h</span><strong>{% if trend.latest is not none %}{{ trend.latest }}{{ trend.unit }}{% else %}—{% endif %}</strong></header>
-                    {% if trend.points %}
-                    <svg viewBox="0 0 300 74" role="img" aria-label="{{ trend_name }} trend"><polyline points="{{ trend.points }}" /></svg>
-                    <footer><span>Low {{ trend.minimum }}{{ trend.unit }}</span><span>High {{ trend.maximum }}{{ trend.unit }}</span></footer>
-                    {% else %}<div class="sensor-no-trend">More telemetry is needed</div>{% endif %}
+                    {% if trend.points %}<svg viewBox="0 0 300 74" role="img" aria-label="{{ trend_name }} trend"><polyline points="{{ trend.points }}" /></svg><footer><span>Low {{ trend.minimum }}{{ trend.unit }}</span><span>High {{ trend.maximum }}{{ trend.unit }}</span></footer>{% else %}<div class="sensor-no-trend">More telemetry is needed</div>{% endif %}
                 </article>
                 {% endfor %}
             </section>
 
-            <footer><span>Last heartbeat</span><time>{{ agent.last_seen or 'Never' }}</time></footer>
+            <footer><span>Last heartbeat</span><time data-field="heartbeat">{{ agent.heartbeat_label }}</time></footer>
         </article>
-        {% else %}
-        <div class="panel empty-events"><strong>No ESP32 agents registered yet</strong><p>Send the sample check-in below and your first node will appear here.</p></div>
-        {% endfor %}
+        {% else %}<div class="panel empty-events"><strong>No ESP32 agents registered yet</strong><p>Send a check-in and your first node will appear here.</p></div>{% endfor %}
     </div>
 
     <aside class="sensor-sidebar">
         <section class="panel sensor-guidance-panel">
-            <span class="eyebrow">ANALYST GUIDANCE</span><h2>How Sentinel evaluates sensors</h2>
+            <span class="eyebrow">HEALTH MODEL</span><h2>Weighted node scoring</h2>
             <div class="sensor-guidance-list">
-                <p><strong>Temperature</strong><span>15–27°C is treated as the normal indoor range.</span></p>
-                <p><strong>Humidity</strong><span>35–60% is treated as comfortable.</span></p>
-                <p><strong>Wi-Fi</strong><span>-67 dBm or stronger supports reliable telemetry.</span></p>
-                <p><strong>Heartbeat</strong><span>A node is offline after 90 seconds without a check-in.</span></p>
+                <p><strong>Heartbeat · 35%</strong><span>Fresh check-ins carry the greatest operational weight.</span></p>
+                <p><strong>Wi-Fi · 20%</strong><span>Signal strength indicates telemetry reliability.</span></p>
+                <p><strong>Sensor availability · 20%</strong><span>Temperature and humidity feeds are independently checked.</span></p>
+                <p><strong>Firmware · 15%</strong><span>A reported firmware version confirms agent identity.</span></p>
+                <p><strong>Environment · 10%</strong><span>Normal environmental ranges complete the health score.</span></p>
             </div>
         </section>
         <section class="panel sensor-timeline-panel">
             <span class="eyebrow">RECENT TELEMETRY</span><h2>Sensor timeline</h2>
             <div class="sensor-timeline">
-            {% for item in telemetry %}
-                <div><span class="sensor-timeline-dot {% if item.motion %}motion-active{% endif %}"></span><p><strong>{{ item.agent_id }}</strong><br>{% if item.temperature is not none %}{{ item.temperature }}°C{% endif %}{% if item.humidity is not none %} · {{ item.humidity }}% RH{% endif %}{% if item.motion %} · Motion detected{% endif %}</p><time>{{ item.timestamp }}</time></div>
-            {% else %}<p class="muted">No telemetry has been received.</p>{% endfor %}
+            {% for item in telemetry %}<div><span class="sensor-timeline-dot {% if item.motion %}motion-active{% endif %}"></span><p><strong>{{ item.agent_id }}</strong><br>{% if item.temperature is not none %}{{ item.temperature }}°C{% endif %}{% if item.humidity is not none %} · {{ item.humidity }}% RH{% endif %}{% if item.motion %} · Motion detected{% endif %}</p><time>{{ item.timestamp }}</time></div>{% else %}<p class="muted">No telemetry has been received.</p>{% endfor %}
             </div>
         </section>
     </aside>

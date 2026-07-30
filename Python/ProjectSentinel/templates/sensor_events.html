@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Sensor Detections | Project Sentinel{% endblock %}
+{% block body_class %}sensor-events-page{% endblock %}
+{% block content %}
+<section class="detection-hero">
+  <div><span class="eyebrow">SECURITY EVENTS & DETECTION ENGINE · v1.7.0</span><h1>Physical signals become security detections.</h1><p>Transition-aware events, anomaly detection and correlated tampering intelligence from Sentinel ESP32 nodes.</p></div>
+  <div class="detection-posture"><span>Highest severity</span><strong class="severity-text-{{ event_summary.highest_severity|lower }}">{{ event_summary.highest_severity }}</strong><small>{{ event_summary.open }} open · {{ event_summary.total }} displayed</small></div>
+</section>
+<section class="detection-summary-grid">
+  {% for severity in ['CRITICAL','HIGH','MEDIUM','LOW','INFO'] %}<article class="detection-count severity-border-{{ severity|lower }}"><span>{{ severity|title }}</span><strong>{{ event_summary.counts[severity] }}</strong></article>{% endfor %}
+  <article class="detection-count"><span>Total</span><strong>{{ event_summary.total }}</strong></article>
+</section>
+<section class="detection-toolbar panel">
+  <div><span class="eyebrow">EVENT TIMELINE</span><h2>Detection history</h2></div>
+  <form method="get">
+    <label>Severity<select name="severity"><option value="">All severities</option>{% for severity in ['CRITICAL','HIGH','MEDIUM','LOW','INFO'] %}<option value="{{ severity }}"{% if selected_severity == severity %} selected{% endif %}>{{ severity|title }}</option>{% endfor %}</select></label>
+    <label>Node<select name="agent_id"><option value="">All nodes</option>{% for agent in agents %}<option value="{{ agent.agent_id }}"{% if selected_agent == agent.agent_id %} selected{% endif %}>{{ agent.name }}</option>{% endfor %}</select></label>
+    <button class="secondary-button" type="submit">Apply filters</button>
+  </form>
+</section>
+<section class="detection-layout">
+  <div class="detection-feed">
+  {% for event in sensor_events %}
+    <article class="detection-card severity-border-{{ event.severity|lower }}">
+      <div class="detection-card-header"><div><span class="severity-chip severity-chip-{{ event.severity|lower }}">{{ event.severity }}</span><span class="event-type">{{ event.type|replace('_',' ') }}</span></div><time>{{ event.timestamp }}</time></div>
+      <h2>{{ event.title }}</h2><p>{{ event.message }}</p>
+      <div class="detection-meta"><span><strong>Node</strong>{{ event.agent_name }}</span><span><strong>Location</strong>{{ event.location }}</span><span><strong>Status</strong>{{ event.status }}</span></div>
+      {% if event.evidence %}<details><summary>Detection evidence</summary><pre>{{ event.evidence|tojson(indent=2) }}</pre></details>{% endif %}
+      {% if event.recommendation %}<footer><strong>Recommended action</strong><span>{{ event.recommendation }}</span></footer>{% endif %}
+    </article>
+  {% else %}<div class="panel empty-events"><strong>No detections match these filters.</strong><p>New transitions and anomalies will appear after ESP32 check-ins.</p></div>{% endfor %}
+  </div>
+  <aside class="detection-rules panel"><span class="eyebrow">ACTIVE RULES</span><h2>Detection coverage</h2>
+    <p><strong>Motion transitions</strong><span>Detected and cleared state changes.</span></p>
+    <p><strong>Unexpected restart</strong><span>Agent uptime falls below the previous heartbeat.</span></p>
+    <p><strong>Wi-Fi degradation</strong><span>Signal drops by 15 dBm or more in one check-in.</span></p>
+    <p><strong>Environmental anomaly</strong><span>Temperature or humidity crosses a high-risk boundary.</span></p>
+    <p><strong>Tampering correlation</strong><span>Motion coincides with restart or abrupt signal loss.</span></p>
+  </aside>
+</section>
+{% endblock %}

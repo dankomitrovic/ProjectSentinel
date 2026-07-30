@@ -1,0 +1,53 @@
+[
+  {
+    "id": "SE-20260730040554550402",
+    "timestamp": "2026-07-30T04:05:54-04:00",
+    "agent_id": "ESP32-001",
+    "agent_name": "Sentinel Node 1",
+    "location": "Office",
+    "type": "SENSOR_RECOVERED",
+    "severity": "LOW",
+    "title": "Sensor node recovered",
+    "message": "Sentinel Node 1 resumed heartbeats after 13031 seconds.",
+    "evidence": {
+      "offline_seconds": 13031
+    },
+    "recommendation": "Review the outage if it was unexpected.",
+    "status": "OPEN"
+  },
+  {
+    "id": "SE-20260730040554550512",
+    "timestamp": "2026-07-30T04:05:54-04:00",
+    "agent_id": "ESP32-001",
+    "agent_name": "Sentinel Node 1",
+    "location": "Office",
+    "type": "UNEXPECTED_RESTART",
+    "severity": "HIGH",
+    "title": "Unexpected sensor restart",
+    "message": "Agent uptime reset from 2054 to 35 seconds.",
+    "evidence": {
+      "previous_uptime": 2054.0,
+      "current_uptime": 35.0
+    },
+    "recommendation": "Inspect power, cabling and the device for an unexpected reset or tampering.",
+    "status": "OPEN"
+  },
+  {
+    "id": "SE-20260730040554550554",
+    "timestamp": "2026-07-30T04:05:54-04:00",
+    "agent_id": "ESP32-001",
+    "agent_name": "Sentinel Node 1",
+    "location": "Office",
+    "type": "POSSIBLE_TAMPERING",
+    "severity": "CRITICAL",
+    "title": "Possible physical tampering",
+    "message": "Motion coincided with device restart.",
+    "evidence": {
+      "motion": true,
+      "restart": true,
+      "signal_drop": false
+    },
+    "recommendation": "Inspect the node and its location immediately.",
+    "status": "OPEN"
+  }
+]

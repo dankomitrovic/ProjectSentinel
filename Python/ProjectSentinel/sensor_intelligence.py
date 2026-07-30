@@ -1,4 +1,4 @@
-"""Sensor intelligence and trend analysis for Project Sentinel."""
+"""Sensor intelligence, health scoring and trend analysis for Project Sentinel."""
 
 from datetime import datetime, timedelta
 
@@ -54,23 +54,57 @@ def classify_rssi(value):
     return _status("Weak", "warning", "Relocate the node or improve Wi-Fi coverage.")
 
 
-def _health_score(agent, temperature_status, humidity_status, rssi_status):
-    score = 100
-    if not agent.get("online"):
-        score -= 55
-    penalties = {
-        "unknown": 10,
-        "advisory": 5,
-        "warning": 15,
-        "critical": 35,
-        "normal": 0,
+def _heartbeat_points(agent):
+    age = agent.get("age_seconds")
+    if age is None:
+        return 0
+    if age <= 45:
+        return 35
+    if age <= 90:
+        return 28
+    if age <= 180:
+        return 12
+    return 0
+
+
+def _wifi_points(value):
+    if value is None:
+        return 0
+    if value >= -55:
+        return 20
+    if value >= -67:
+        return 17
+    if value >= -75:
+        return 11
+    if value >= -85:
+        return 5
+    return 1
+
+
+def _sensor_points(latest):
+    return (10 if latest.get("temperature") is not None else 0) + (10 if latest.get("humidity") is not None else 0)
+
+
+def _firmware_points(agent):
+    firmware = str(agent.get("firmware") or "").strip().lower()
+    return 15 if firmware and firmware != "unknown" else 0
+
+
+def _environment_points(temperature_status, humidity_status):
+    severity_points = {"normal": 5, "advisory": 4, "warning": 2, "critical": 0, "unknown": 0}
+    return severity_points.get(temperature_status["severity"], 0) + severity_points.get(humidity_status["severity"], 0)
+
+
+def _health_score(agent, temperature_status, humidity_status):
+    latest = agent.get("latest") or {}
+    components = {
+        "heartbeat": _heartbeat_points(agent),
+        "wifi": _wifi_points(latest.get("rssi")),
+        "sensors": _sensor_points(latest),
+        "firmware": _firmware_points(agent),
+        "environment": _environment_points(temperature_status, humidity_status),
     }
-    score -= penalties.get(temperature_status["severity"], 0)
-    score -= penalties.get(humidity_status["severity"], 0)
-    score -= penalties.get(rssi_status["severity"], 0)
-    if (agent.get("latest") or {}).get("motion"):
-        score -= 3
-    return max(0, min(100, score))
+    return sum(components.values()), components
 
 
 def _health_label(score):
@@ -119,6 +153,44 @@ def _trend(records, field, unit):
     }
 
 
+def _motion_context(records, now):
+    motion_records = [record for record in records if record.get("motion")]
+    last_motion = motion_records[-1] if motion_records else None
+    latest = records[-1] if records else None
+    active = bool(latest and latest.get("motion"))
+    active_since = None
+    if active:
+        for record in reversed(records):
+            if not record.get("motion"):
+                break
+            active_since = record.get("timestamp")
+    active_seconds = None
+    active_timestamp = _parse_timestamp(active_since)
+    if active_timestamp is not None:
+        active_seconds = max(0, int((now - active_timestamp.astimezone()).total_seconds()))
+    return {
+        "active": active,
+        "active_since": active_since,
+        "active_seconds": active_seconds,
+        "last_motion": last_motion.get("timestamp") if last_motion else None,
+        "active_samples_24h": len(motion_records),
+    }
+
+
+def _relative_age(seconds):
+    if seconds is None:
+        return "Never"
+    if seconds < 5:
+        return "Just now"
+    if seconds < 60:
+        return f"{seconds} sec ago"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} min ago"
+    hours = minutes // 60
+    return f"{hours} hr ago"
+
+
 def build_sensor_intelligence(agents, telemetry, hours=24):
     now = datetime.now().astimezone()
     cutoff = now - timedelta(hours=hours)
@@ -136,20 +208,23 @@ def build_sensor_intelligence(agents, telemetry, hours=24):
         temperature = classify_temperature(latest.get("temperature"))
         humidity = classify_humidity(latest.get("humidity"))
         rssi = classify_rssi(latest.get("rssi"))
-        score = _health_score(agent, temperature, humidity, rssi)
+        score, components = _health_score(agent, temperature, humidity)
         health_label, health_severity = _health_label(score)
         records = [item for item in recent if item.get("agent_id") == agent.get("agent_id")]
-        motion_count = sum(1 for item in records if item.get("motion"))
+        motion = _motion_context(records, now)
 
         item = dict(agent)
+        item["heartbeat_label"] = _relative_age(agent.get("age_seconds"))
         item["intelligence"] = {
             "health_score": score,
             "health_label": health_label,
             "health_severity": health_severity,
+            "health_components": components,
             "temperature": temperature,
             "humidity": humidity,
             "rssi": rssi,
-            "motion_count_24h": motion_count,
+            "motion": motion,
+            "motion_count_24h": motion["active_samples_24h"],
             "trends": {
                 "temperature": _trend(records, "temperature", "°C"),
                 "humidity": _trend(records, "humidity", "%"),
@@ -163,7 +238,7 @@ def build_sensor_intelligence(agents, telemetry, hours=24):
         for title, classification in (("Temperature", temperature), ("Humidity", humidity), ("Wi-Fi signal", rssi)):
             if classification["severity"] in {"warning", "critical"}:
                 alerts.append({"severity": classification["severity"], "agent": agent, "title": title, "message": classification["message"]})
-        if latest.get("motion"):
+        if motion["active"]:
             alerts.append({"severity": "advisory", "agent": agent, "title": "Motion active", "message": "The PIR sensor currently reports motion."})
 
     severity_order = {"critical": 0, "warning": 1, "advisory": 2, "normal": 3}
@@ -178,6 +253,17 @@ def build_sensor_intelligence(agents, telemetry, hours=24):
     else:
         posture = "At risk"
 
+    latest_record = recent[-1] if recent else None
+    last_motion_record = next((item for item in reversed(recent) if item.get("motion")), None)
+    operations = {
+        "api": {"label": "Operational", "severity": "normal"},
+        "storage": {"label": "Operational", "severity": "normal"},
+        "fleet": {"label": f"{sum(1 for item in enriched if item.get('online'))}/{len(enriched)} online", "severity": "normal" if enriched and all(item.get("online") for item in enriched) else "warning"},
+        "last_telemetry": latest_record.get("timestamp") if latest_record else None,
+        "last_motion": last_motion_record.get("timestamp") if last_motion_record else None,
+        "server_time": now.isoformat(timespec="seconds"),
+    }
+
     return {
         "agents": enriched,
         "alerts": alerts,
@@ -185,4 +271,5 @@ def build_sensor_intelligence(agents, telemetry, hours=24):
         "posture": posture,
         "window_hours": hours,
         "telemetry_samples": len(recent),
+        "operations": operations,
     }

@@ -1018,5 +1018,53 @@
     "relay_state": "",
     "firmware": "2.1.0",
     "ip_address": "192.168.1.177"
+  },
+  {
+    "agent_id": "ESP32-001",
+    "timestamp": "2026-07-30T04:05:54-04:00",
+    "temperature": 21.4,
+    "humidity": 45.6,
+    "motion": true,
+    "rssi": -64.0,
+    "uptime_seconds": 35.0,
+    "relay_state": "",
+    "firmware": "2.1.2",
+    "ip_address": "192.168.1.177"
+  },
+  {
+    "agent_id": "ESP32-001",
+    "timestamp": "2026-07-30T04:06:24-04:00",
+    "temperature": 21.4,
+    "humidity": 45.2,
+    "motion": true,
+    "rssi": -69.0,
+    "uptime_seconds": 66.0,
+    "relay_state": "",
+    "firmware": "2.1.2",
+    "ip_address": "192.168.1.177"
+  },
+  {
+    "agent_id": "ESP32-001",
+    "timestamp": "2026-07-30T04:06:55-04:00",
+    "temperature": 21.4,
+    "humidity": 45.7,
+    "motion": true,
+    "rssi": -62.0,
+    "uptime_seconds": 96.0,
+    "relay_state": "",
+    "firmware": "2.1.2",
+    "ip_address": "192.168.1.177"
+  },
+  {
+    "agent_id": "ESP32-001",
+    "timestamp": "2026-07-30T04:07:25-04:00",
+    "temperature": 21.4,
+    "humidity": 45.9,
+    "motion": true,
+    "rssi": -71.0,
+    "uptime_seconds": 126.0,
+    "relay_state": "",
+    "firmware": "2.1.2",
+    "ip_address": "192.168.1.177"
   }
 ]

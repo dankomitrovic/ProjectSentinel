@@ -23,6 +23,7 @@ from inventory import (
 from main import main as run_monitoring_cycle
 from registry import load_device_registry
 from sensor_intelligence import build_sensor_intelligence
+from sensor_events import detect_checkin_events, list_sensor_events, sensor_event_summary
 from sensor_store import (
     list_agents,
     recent_telemetry,
@@ -1134,9 +1135,24 @@ def sensors_api():
     agents = list_agents()
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.6.0",
+        "version": "1.7.0",
         "summary": sensor_summary(),
         "agents": agents
+    })
+
+
+@app.route("/api/sensors/operations")
+def sensor_operations_api():
+    """Return live sensor intelligence for the operations dashboard."""
+
+    agents = list_agents()
+    telemetry = recent_telemetry(limit=500)
+    intelligence = build_sensor_intelligence(agents, telemetry, hours=24)
+    return jsonify({
+        "application": "Project Sentinel",
+        "version": "1.7.0",
+        "summary": sensor_summary(),
+        "intelligence": intelligence
     })
 
 
@@ -1176,16 +1192,18 @@ def sensor_agent_checkin():
     if not agent_request_authorised():
         return jsonify({"status": "error", "message": "Invalid Sentinel agent key."}), 401
     payload = request.get_json(silent=True) or {}
+    previous_agent = next((item for item in list_agents() if item.get("agent_id") == (payload.get("agent_id") or payload.get("agent"))), None)
     try:
         agent, telemetry, motion_started = record_checkin(payload, request.remote_addr or "")
     except ValueError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
 
-    if motion_started:
+    detections = detect_checkin_events(previous_agent, agent, telemetry)
+    for detection in detections:
         record_event(
-            event_type="SENSOR_MOTION",
-            severity="MEDIUM",
-            message=f"Motion detected by {agent.get('name', agent.get('agent_id'))}.",
+            event_type=detection.get("type", "SENSOR_DETECTION"),
+            severity=detection.get("severity", "INFO"),
+            message=detection.get("message", detection.get("title", "Sensor detection")),
             device={
                 "friendly_name": agent.get("name", agent.get("agent_id")),
                 "ip_address": telemetry.get("ip_address", ""),
@@ -1195,8 +1213,8 @@ def sensor_agent_checkin():
             metadata={
                 "agent_id": agent.get("agent_id"),
                 "location": agent.get("location"),
-                "temperature": telemetry.get("temperature"),
-                "humidity": telemetry.get("humidity")
+                "detection_id": detection.get("id"),
+                "evidence": detection.get("evidence", {})
             }
         )
 
@@ -1204,7 +1222,9 @@ def sensor_agent_checkin():
         "status": "accepted",
         "server_time": current_timestamp(),
         "agent_id": agent.get("agent_id"),
-        "motion_event_created": motion_started
+        "motion_event_created": motion_started,
+        "detections_created": len(detections),
+        "detections": [{"id": item.get("id"), "type": item.get("type"), "severity": item.get("severity")} for item in detections]
     })
 
 
@@ -2044,6 +2064,38 @@ def device(mac_address):
             )
         }
     ), 404
+
+
+@app.route("/sensor-events")
+def sensor_events_page():
+    """Display security detections generated from physical telemetry."""
+
+    severity = request.args.get("severity", "").upper() or None
+    agent_id = request.args.get("agent_id", "") or None
+    events = list_sensor_events(limit=500, severity=severity, agent_id=agent_id)
+    return render_template(
+        "sensor_events.html",
+        sensor_events=events,
+        event_summary=sensor_event_summary(events),
+        selected_severity=severity or "ALL",
+        selected_agent=agent_id or "ALL",
+        agents=list_agents()
+    )
+
+
+@app.route("/api/sensor-events")
+def sensor_events_api():
+    """Return persisted ESP32 security detections."""
+
+    severity = request.args.get("severity")
+    agent_id = request.args.get("agent_id")
+    events = list_sensor_events(limit=request.args.get("limit", 200), severity=severity, agent_id=agent_id)
+    return jsonify({
+        "application": "Project Sentinel",
+        "version": "1.7.0",
+        "summary": sensor_event_summary(events),
+        "events": events
+    })
 
 
 @app.route("/events-center")
