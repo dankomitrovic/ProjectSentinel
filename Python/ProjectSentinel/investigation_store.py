@@ -10,6 +10,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 INVESTIGATIONS_FILE = os.path.join(DATA_DIR, "investigations.json")
 LOCK = Lock()
 VALID_STATUSES = {"OPEN", "ACKNOWLEDGED", "IN_PROGRESS", "RESOLVED", "CLOSED", "FALSE_POSITIVE"}
+ACTIVE_STATUSES = {"OPEN", "ACKNOWLEDGED", "IN_PROGRESS"}
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 
 
@@ -50,6 +51,44 @@ def _timeline_entry(entry_type, message, actor="Sentinel"):
     return {"timestamp": _now(), "type": entry_type, "message": message, "actor": actor}
 
 
+def calculate_confidence(investigation):
+    """Return a transparent 0-100 confidence score for an investigation."""
+    detections = investigation.get("detections") or []
+    evidence = investigation.get("evidence") or {}
+    score = 35
+
+    score += min(len(detections) * 8, 24)
+    severities = {str(item.get("severity", "INFO")).upper() for item in detections}
+    if "CRITICAL" in severities:
+        score += 18
+    elif "HIGH" in severities:
+        score += 10
+
+    detection_types = " ".join(str(item.get("type", "")).lower() for item in detections)
+    titles = " ".join(str(item.get("title", "")).lower() for item in detections)
+    combined = f"{detection_types} {titles}"
+    for signal in ("motion", "restart", "rssi", "tamper"):
+        if signal in combined:
+            score += 5
+
+    if evidence.get("motion") is True:
+        score += 4
+    if evidence.get("rssi") is not None:
+        try:
+            if float(evidence["rssi"]) <= -70:
+                score += 4
+        except (TypeError, ValueError):
+            pass
+    if evidence.get("uptime_seconds") is not None:
+        try:
+            if float(evidence["uptime_seconds"]) < 120:
+                score += 5
+        except (TypeError, ValueError):
+            pass
+
+    return min(max(score, 1), 99)
+
+
 def create_or_correlate_investigation(detections, agent, telemetry):
     """Create one investigation for High/Critical detections or correlate into an open case."""
     qualifying = [item for item in detections if str(item.get("severity", "INFO")).upper() in {"HIGH", "CRITICAL"}]
@@ -61,7 +100,7 @@ def create_or_correlate_investigation(detections, agent, telemetry):
         items = _read()
         active = next((item for item in reversed(items)
                        if item.get("agent_id") == agent_id
-                       and item.get("status") in {"OPEN", "ACKNOWLEDGED", "IN_PROGRESS"}), None)
+                       and item.get("status") in ACTIVE_STATUSES), None)
         detection_ids = [item.get("id") for item in qualifying if item.get("id")]
         highest = min((str(item.get("severity", "INFO")).upper() for item in qualifying), key=lambda x: SEVERITY_ORDER.get(x, 99))
 
@@ -77,6 +116,7 @@ def create_or_correlate_investigation(detections, agent, telemetry):
                 active.setdefault("timeline", []).append(_timeline_entry(
                     "DETECTIONS_CORRELATED", f"Correlated {len(new_ids)} additional detection(s)."
                 ))
+                active["confidence"] = calculate_confidence(active)
                 _write(items)
             return active
 
@@ -111,13 +151,20 @@ def create_or_correlate_investigation(detections, agent, telemetry):
                 _timeline_entry("INVESTIGATION_CREATED", f"Investigation created from {len(qualifying)} high-priority detection(s)."),
             ],
         }
+        investigation["confidence"] = calculate_confidence(investigation)
         items.append(investigation)
         _write(items)
         return investigation
 
 
+def _enrich(item):
+    enriched = dict(item)
+    enriched["confidence"] = item.get("confidence") or calculate_confidence(item)
+    return enriched
+
+
 def list_investigations(status=None, severity=None, agent_id=None):
-    items = list(reversed(_read()))
+    items = [_enrich(item) for item in reversed(_read())]
     if status and status != "ALL":
         items = [item for item in items if item.get("status") == status]
     if severity and severity != "ALL":
@@ -128,7 +175,13 @@ def list_investigations(status=None, severity=None, agent_id=None):
 
 
 def get_investigation(investigation_id):
-    return next((item for item in _read() if item.get("id") == investigation_id), None)
+    item = next((item for item in _read() if item.get("id") == investigation_id), None)
+    return _enrich(item) if item else None
+
+
+def get_related_investigations(investigation_id, agent_id, limit=5):
+    """Return earlier cases for the same node, excluding the current case."""
+    return [item for item in list_investigations(agent_id=agent_id) if item.get("id") != investigation_id][:limit]
 
 
 def update_status(investigation_id, status, actor="Analyst"):
@@ -151,7 +204,7 @@ def update_status(investigation_id, status, actor="Analyst"):
             "STATUS_CHANGED", f"Status changed from {previous} to {status}.", actor
         ))
         _write(items)
-        return investigation
+        return _enrich(investigation)
 
 
 def add_note(investigation_id, note, author="Analyst"):
@@ -168,24 +221,23 @@ def add_note(investigation_id, note, author="Analyst"):
         investigation.setdefault("timeline", []).append(_timeline_entry("ANALYST_NOTE", note, entry["author"]))
         investigation["updated_at"] = _now()
         _write(items)
-        return investigation
+        return _enrich(investigation)
 
 
 def investigation_summary(items=None):
     items = items if items is not None else list_investigations()
-    active = {"OPEN", "ACKNOWLEDGED", "IN_PROGRESS"}
     now = datetime.now().astimezone()
     ages = []
     for item in items:
-        if item.get("status") in active:
+        if item.get("status") in ACTIVE_STATUSES:
             try:
                 ages.append((now - datetime.fromisoformat(item["created_at"]).astimezone()).total_seconds())
             except (KeyError, TypeError, ValueError):
                 pass
     return {
         "total": len(items),
-        "open": sum(1 for item in items if item.get("status") in active),
-        "critical": sum(1 for item in items if item.get("severity") == "CRITICAL" and item.get("status") in active),
+        "open": sum(1 for item in items if item.get("status") in ACTIVE_STATUSES),
+        "critical": sum(1 for item in items if item.get("severity") == "CRITICAL" and item.get("status") in ACTIVE_STATUSES),
         "in_progress": sum(1 for item in items if item.get("status") == "IN_PROGRESS"),
         "resolved": sum(1 for item in items if item.get("status") in {"RESOLVED", "CLOSED"}),
         "false_positive": sum(1 for item in items if item.get("status") == "FALSE_POSITIVE"),

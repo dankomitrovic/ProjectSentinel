@@ -3,7 +3,7 @@
 {% block body_class %}investigations-page{% endblock %}
 {% block content %}
 <section class="investigation-hero">
-  <div><span class="eyebrow">INVESTIGATION CENTRE · v1.8.0</span><h1>From detection to documented response.</h1><p>Correlated cases, evidence, analyst workflow and permanent investigation history.</p></div>
+  <div><span class="eyebrow">INVESTIGATION CENTRE · v1.8.2</span><h1>From detection to documented response.</h1><p>Correlated cases, evidence, analyst workflow and permanent investigation history.</p></div>
   <div class="investigation-posture"><span>Active investigations</span><strong>{{ investigation_summary.open }}</strong><small>{{ investigation_summary.critical }} critical · {{ investigation_summary.in_progress }} in progress</small></div>
 </section>
 <section class="investigation-summary-grid">
@@ -28,7 +28,7 @@
   <article class="investigation-card severity-border-{{ item.severity|lower }}">
     <header><div><span class="severity-chip severity-chip-{{ item.severity|lower }}">{{ item.severity }}</span><strong>{{ item.id }}</strong></div><span class="case-status case-status-{{ item.status|lower }}">{{ item.status|replace('_',' ') }}</span></header>
     <h2>{{ item.title }}</h2><p>{{ item.description }}</p>
-    <div class="investigation-meta"><span>Node<strong>{{ item.agent_name }}</strong></span><span>Location<strong>{{ item.location }}</strong></span><span>Detections<strong>{{ item.detection_ids|length }}</strong></span><span>Updated<strong>{{ item.updated_at }}</strong></span></div>
+    <div class="investigation-meta"><span>Node<strong>{{ item.agent_name }}</strong></span><span>Location<strong>{{ item.location }}</strong></span><span>Confidence<strong>{{ item.confidence }}%</strong></span><span>Updated<strong>{{ item.updated_at|friendly_time }}</strong></span></div>
     <footer><span>Assigned: {{ item.assigned_to }}</span><a class="primary-button" href="{{ url_for('investigation_detail_page', investigation_id=item.id) }}">Open investigation</a></footer>
   </article>
 {% else %}

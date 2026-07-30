@@ -30,6 +30,7 @@ from investigation_store import (
     get_investigation,
     investigation_summary,
     list_investigations,
+    get_related_investigations,
     update_status,
 )
 from sensor_store import (
@@ -42,6 +43,23 @@ from sensor_store import (
 
 
 app = Flask(__name__)
+
+
+@app.template_filter("friendly_time")
+def friendly_time(value):
+    """Format stored ISO timestamps for fast analyst scanning."""
+    if not value:
+        return "Unavailable"
+    try:
+        moment = datetime.fromisoformat(str(value)).astimezone()
+    except (TypeError, ValueError):
+        return str(value)
+    now = datetime.now().astimezone()
+    if moment.date() == now.date():
+        return f"Today {moment.strftime('%H:%M')}"
+    if (now.date() - moment.date()).days == 1:
+        return f"Yesterday {moment.strftime('%H:%M')}"
+    return moment.strftime("%d %b %Y %H:%M")
 
 scan_lock = Lock()
 scan_state_lock = Lock()
@@ -1143,7 +1161,7 @@ def sensors_api():
     agents = list_agents()
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.8.0",
+        "version": "1.8.2",
         "summary": sensor_summary(),
         "agents": agents
     })
@@ -1158,7 +1176,7 @@ def sensor_operations_api():
     intelligence = build_sensor_intelligence(agents, telemetry, hours=24)
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.8.0",
+        "version": "1.8.2",
         "summary": sensor_summary(),
         "intelligence": intelligence
     })
@@ -2103,7 +2121,7 @@ def sensor_events_api():
     events = list_sensor_events(limit=request.args.get("limit", 200), severity=severity, agent_id=agent_id)
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.8.0",
+        "version": "1.8.2",
         "summary": sensor_event_summary(events),
         "events": events
     })
@@ -2156,7 +2174,13 @@ def investigation_detail_page(investigation_id):
     investigation = get_investigation(investigation_id)
     if not investigation:
         return render_template("investigation_detail.html", investigation=None), 404
-    return render_template("investigation_detail.html", investigation=investigation)
+    return render_template(
+        "investigation_detail.html",
+        investigation=investigation,
+        related_investigations=get_related_investigations(
+            investigation_id, investigation.get("agent_id"), limit=5
+        ),
+    )
 
 
 @app.route("/api/investigations")
@@ -2164,7 +2188,24 @@ def investigations_api():
     items = list_investigations(
         request.args.get("status"), request.args.get("severity"), request.args.get("agent_id")
     )
-    return jsonify({"application": "Project Sentinel", "version": "1.8.0", "summary": investigation_summary(items), "investigations": items})
+    return jsonify({"application": "Project Sentinel", "version": "1.8.2", "summary": investigation_summary(items), "investigations": items})
+
+
+@app.route("/api/investigations/<investigation_id>")
+def investigation_detail_api(investigation_id):
+    """Return one investigation for the live analyst workspace."""
+    investigation = get_investigation(investigation_id)
+    if not investigation:
+        return jsonify({"status": "error", "message": "Investigation not found."}), 404
+    return jsonify({
+        "application": "Project Sentinel",
+        "version": "1.8.2",
+        "investigation": investigation,
+        "related_investigations": get_related_investigations(
+            investigation_id, investigation.get("agent_id"), limit=5
+        ),
+        "server_time": current_timestamp(),
+    })
 
 
 @app.route("/api/investigations/<investigation_id>/status", methods=["POST"])
