@@ -1161,7 +1161,7 @@ def sensors_api():
     agents = list_agents()
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.8.2",
+        "version": "1.8.3",
         "summary": sensor_summary(),
         "agents": agents
     })
@@ -1176,7 +1176,7 @@ def sensor_operations_api():
     intelligence = build_sensor_intelligence(agents, telemetry, hours=24)
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.8.2",
+        "version": "1.8.3",
         "summary": sensor_summary(),
         "intelligence": intelligence
     })
@@ -2121,7 +2121,7 @@ def sensor_events_api():
     events = list_sensor_events(limit=request.args.get("limit", 200), severity=severity, agent_id=agent_id)
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.8.2",
+        "version": "1.8.3",
         "summary": sensor_event_summary(events),
         "events": events
     })
@@ -2188,7 +2188,7 @@ def investigations_api():
     items = list_investigations(
         request.args.get("status"), request.args.get("severity"), request.args.get("agent_id")
     )
-    return jsonify({"application": "Project Sentinel", "version": "1.8.2", "summary": investigation_summary(items), "investigations": items})
+    return jsonify({"application": "Project Sentinel", "version": "1.8.3", "summary": investigation_summary(items), "investigations": items})
 
 
 @app.route("/api/investigations/<investigation_id>")
@@ -2199,7 +2199,7 @@ def investigation_detail_api(investigation_id):
         return jsonify({"status": "error", "message": "Investigation not found."}), 404
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.8.2",
+        "version": "1.8.3",
         "investigation": investigation,
         "related_investigations": get_related_investigations(
             investigation_id, investigation.get("agent_id"), limit=5

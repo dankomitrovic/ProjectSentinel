@@ -61,6 +61,8 @@
     $("case-updated").textContent = friendlyTime(inv.updated_at);
     $("case-confidence").textContent = inv.confidence;
     $("confidence-bar").style.width = `${inv.confidence}%`;
+    const confidenceLabel = $("confidence-label");
+    if (confidenceLabel) confidenceLabel.textContent = inv.confidence >= 90 ? "Very high" : inv.confidence >= 75 ? "High" : inv.confidence >= 50 ? "Moderate" : "Low";
     $("case-detection-count").textContent = inv.detections.length;
     $("related-detection-count").textContent = inv.detections.length;
     $("case-agent-name").textContent = inv.agent_name;
@@ -74,7 +76,11 @@
     document.querySelectorAll("[data-evidence-key]").forEach(card => {
       const key = card.dataset.evidenceKey;
       card.querySelector("strong").textContent = evidenceValue(key, inv.evidence?.[key]);
-      card.classList.toggle("evidence-alert", key === "motion" && inv.evidence?.[key] === true);
+      const rawValue = inv.evidence?.[key];
+      card.classList.toggle("evidence-alert", key === "motion" && rawValue === true);
+      card.classList.toggle("evidence-unavailable", rawValue === null || rawValue === undefined || rawValue === "");
+      card.classList.toggle("evidence-warning", key === "rssi" && Number(rawValue) <= -70);
+      card.classList.toggle("evidence-healthy", (key === "motion" && rawValue === false) || (key === "rssi" && Number(rawValue) > -70));
     });
 
     $("related-detections").innerHTML = (inv.detections || []).map(d => `
