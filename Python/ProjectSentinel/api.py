@@ -24,6 +24,14 @@ from main import main as run_monitoring_cycle
 from registry import load_device_registry
 from sensor_intelligence import build_sensor_intelligence
 from sensor_events import detect_checkin_events, list_sensor_events, sensor_event_summary
+from investigation_store import (
+    add_note,
+    create_or_correlate_investigation,
+    get_investigation,
+    investigation_summary,
+    list_investigations,
+    update_status,
+)
 from sensor_store import (
     list_agents,
     recent_telemetry,
@@ -1135,7 +1143,7 @@ def sensors_api():
     agents = list_agents()
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.7.0",
+        "version": "1.8.0",
         "summary": sensor_summary(),
         "agents": agents
     })
@@ -1150,7 +1158,7 @@ def sensor_operations_api():
     intelligence = build_sensor_intelligence(agents, telemetry, hours=24)
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.7.0",
+        "version": "1.8.0",
         "summary": sensor_summary(),
         "intelligence": intelligence
     })
@@ -1218,13 +1226,16 @@ def sensor_agent_checkin():
             }
         )
 
+    investigation = create_or_correlate_investigation(detections, agent, telemetry)
+
     return jsonify({
         "status": "accepted",
         "server_time": current_timestamp(),
         "agent_id": agent.get("agent_id"),
         "motion_event_created": motion_started,
         "detections_created": len(detections),
-        "detections": [{"id": item.get("id"), "type": item.get("type"), "severity": item.get("severity")} for item in detections]
+        "detections": [{"id": item.get("id"), "type": item.get("type"), "severity": item.get("severity")} for item in detections],
+        "investigation_id": investigation.get("id") if investigation else None
     })
 
 
@@ -2092,10 +2103,92 @@ def sensor_events_api():
     events = list_sensor_events(limit=request.args.get("limit", 200), severity=severity, agent_id=agent_id)
     return jsonify({
         "application": "Project Sentinel",
-        "version": "1.7.0",
+        "version": "1.8.0",
         "summary": sensor_event_summary(events),
         "events": events
     })
+
+
+@app.route("/investigations")
+def investigations_page():
+    """Display the investigation workflow dashboard."""
+    selected_status = request.args.get("status", "ALL").upper()
+    selected_severity = request.args.get("severity", "ALL").upper()
+    selected_agent = request.args.get("agent_id", "ALL")
+    all_items = list_investigations()
+    if not all_items:
+        historical = list(reversed(list_sensor_events(limit=500)))
+        for detection in historical:
+            if str(detection.get("severity", "INFO")).upper() not in {"HIGH", "CRITICAL"}:
+                continue
+            agent = {
+                "agent_id": detection.get("agent_id"),
+                "name": detection.get("agent_name"),
+                "location": detection.get("location"),
+            }
+            evidence = detection.get("evidence") or {}
+            telemetry = {
+                "temperature": evidence.get("temperature"),
+                "humidity": evidence.get("humidity"),
+                "motion": evidence.get("motion"),
+                "rssi": evidence.get("current_rssi") or evidence.get("rssi"),
+                "uptime_seconds": evidence.get("current_uptime"),
+                "firmware": evidence.get("firmware"),
+                "ip_address": evidence.get("ip_address"),
+            }
+            create_or_correlate_investigation([detection], agent, telemetry)
+        all_items = list_investigations()
+    items = list_investigations(selected_status, selected_severity, selected_agent)
+    return render_template(
+        "investigations.html",
+        investigations=items,
+        investigation_summary=investigation_summary(list_investigations()),
+        selected_status=selected_status,
+        selected_severity=selected_severity,
+        selected_agent=selected_agent,
+        agents=list_agents(),
+    )
+
+
+@app.route("/investigations/<investigation_id>")
+def investigation_detail_page(investigation_id):
+    """Display one investigation with evidence, timeline and notes."""
+    investigation = get_investigation(investigation_id)
+    if not investigation:
+        return render_template("investigation_detail.html", investigation=None), 404
+    return render_template("investigation_detail.html", investigation=investigation)
+
+
+@app.route("/api/investigations")
+def investigations_api():
+    items = list_investigations(
+        request.args.get("status"), request.args.get("severity"), request.args.get("agent_id")
+    )
+    return jsonify({"application": "Project Sentinel", "version": "1.8.0", "summary": investigation_summary(items), "investigations": items})
+
+
+@app.route("/api/investigations/<investigation_id>/status", methods=["POST"])
+def investigation_status_api(investigation_id):
+    payload = request.get_json(silent=True) or request.form
+    try:
+        investigation = update_status(investigation_id, payload.get("status", ""), payload.get("actor", "Analyst"))
+    except ValueError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+    if request.is_json:
+        return jsonify({"status": "updated", "investigation": investigation})
+    return redirect(url_for("investigation_detail_page", investigation_id=investigation_id))
+
+
+@app.route("/api/investigations/<investigation_id>/notes", methods=["POST"])
+def investigation_notes_api(investigation_id):
+    payload = request.get_json(silent=True) or request.form
+    try:
+        investigation = add_note(investigation_id, payload.get("note", ""), payload.get("author", "Analyst"))
+    except ValueError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+    if request.is_json:
+        return jsonify({"status": "created", "investigation": investigation}), 201
+    return redirect(url_for("investigation_detail_page", investigation_id=investigation_id))
 
 
 @app.route("/events-center")

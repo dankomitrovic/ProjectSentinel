@@ -15,6 +15,7 @@
             <a href="{{ url_for('exposures_page') }}"{% if request.endpoint == 'exposures_page' %} class="active" aria-current="page"{% endif %}>Exposures</a>
             <a href="{{ url_for('sensors_page') }}"{% if request.endpoint == 'sensors_page' %} class="active" aria-current="page"{% endif %}>Sensors</a>
             <a href="{{ url_for('sensor_events_page') }}"{% if request.endpoint == 'sensor_events_page' %} class="active" aria-current="page"{% endif %}>Detections</a>
+            <a href="{{ url_for('investigations_page') }}"{% if request.endpoint in ['investigations_page', 'investigation_detail_page'] %} class="active" aria-current="page"{% endif %}>Investigations</a>
             <a href="{{ url_for('assets_page') }}"{% if request.endpoint == 'assets_page' %} class="active" aria-current="page"{% endif %}>Assets</a>
             <a href="{{ url_for('devices') }}"{% if request.endpoint == 'devices' %} class="active" aria-current="page"{% endif %}>Devices JSON</a>
             <a href="{{ url_for('api_information') }}"{% if request.endpoint == 'api_information' %} class="active" aria-current="page"{% endif %}>API Index</a>
